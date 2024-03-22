@@ -6,9 +6,9 @@
 
 # Set the toolpath parameter to the location of the GNU Arm Embedded Toolchain
 
-TOOLCHAIN_PATH = --- INSERT PATH TO GNU ARM EMBEDDED TOOLCHAIN HERE (e.g. /Library/Toolchains/) ---
+TOOLCHAIN_PATH = ${HOME}/.local/
 
-TOOLCHAIN_VERSION = gcc-arm-none-eabi-10.3-2021.10
+TOOLCHAIN_VERSION = arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi
 
 # Determine the path to the toolchain binary
 

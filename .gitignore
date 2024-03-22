@@ -1,2 +1,13 @@
 # Add any directories, files, or patterns you don't want to be tracked by version control
 GNU ARM v4.9.3 - Release/*
+
+build/objects/
+build/audiomoth.*
+
+*.cbp
+*.layout
+*.depends
+
+
+doc/
+doc*/
