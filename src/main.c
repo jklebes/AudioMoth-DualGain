@@ -295,20 +295,20 @@ typedef struct {
 static const configSettings_t defaultConfigSettings = {
     .time = 0,
     .gain1 = AM_GAIN_MEDIUM,
-    .gain2 = AM_GAIN_MEDIUM,
+    .gain2 = AM_GAIN_LOW,
     .clockDivider = 4,
     .acquisitionCycles = 16,
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDurationBetweenGains = 55,
-    .recordDurationGain1 = 5,
-    .sleepDurationMain = 5,
-    .recordDurationGain2 = 5,
+    .sleepDurationBetweenGains = 45,
+    .recordDurationGain1 = 6,
+    .sleepDurationMain = 3,
+    .recordDurationGain2 = 6,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
-        {.startMinutes = 0, .endMinutes = 0},
+        {.startMinutes = 0, .endMinutes = 1440},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
@@ -554,7 +554,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     length += sprintf(configBuffer + length, "Gain2                            : %s\r\n\r\n", gainSettings[configSettings->gain2]);
 
-    length += sprintf(configBuffer + length, "Sleep duration between gains (s)              : ");
+    length += sprintf(configBuffer + length, "Sleep duration between gains (s)           \n : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
