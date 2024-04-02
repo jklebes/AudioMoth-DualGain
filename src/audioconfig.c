@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 #include "biquad.h"
-#include "audioMoth.h"
+#include "audiomoth.h"
 #include "butterworth.h"
 #include "audioconfig.h"
 
