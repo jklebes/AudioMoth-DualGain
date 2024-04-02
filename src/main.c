@@ -183,7 +183,11 @@
 
 /* Recording state enumeration */
 
-typedef enum {RECORDING_OKAY, FILE_SIZE_LIMITED, SUPPLY_VOLTAGE_LOW, SWITCH_CHANGED, MICROPHONE_CHANGED, MAGNETIC_SWITCH, SDCARD_WRITE_ERROR} AM_recordingState_t;
+typedef enum {RECORDING_OKAY, FILE_SIZE_LIMITED, SUPPLY_VOLTAGE_LOW, SWITCH_CHANGED, MICROPHONE_CHANGED, SDCARD_WRITE_ERROR} AM_recordingState_t;
+
+/* Gain 1 or 2 step in recording cycle - just an alias of a 0,1 flag*/
+
+typedef enum {GAIN_STEP_1, GAIN_STEP_2} AM_DualGainStep_t;
 
 /* Battery level display type */
 
@@ -256,14 +260,17 @@ typedef struct {
 // TODO and remove filter, GPS, and other options
 typedef struct {
     uint32_t time;
-    AM_gainSetting_t gain;
+    AM_gainSetting_t gain1;
+    AM_gainSetting_t gain2;
     uint8_t clockDivider;
     uint8_t acquisitionCycles;
     uint8_t oversampleRate;
     uint32_t sampleRate;
     uint8_t sampleRateDivider;
-    uint16_t sleepDuration;
-    uint16_t recordDuration;
+    uint16_t sleepDurationBetweenGains;
+    uint16_t recordDurationGain1;
+    uint16_t sleepDurationMain;
+    uint16_t recordDurationGain2;
     uint8_t enableLED;
     uint8_t activeRecordingPeriods;
     recordingPeriod_t recordingPeriods[MAX_RECORDING_PERIODS];
@@ -274,52 +281,30 @@ typedef struct {
     uint8_t disableSleepRecordCycle;
     uint32_t earliestRecordingTime;
     uint32_t latestRecordingTime;
-    uint16_t lowerFilterFreq;
-    uint16_t higherFilterFreq;
-    union {
-        uint16_t amplitudeThreshold;
-        uint16_t frequencyTriggerCentreFrequency;
-    };
     uint8_t requireAcousticConfiguration : 1;
     AM_batteryLevelDisplayType_t batteryLevelDisplayType : 1;
     uint8_t minimumTriggerDuration : 6;
-    union {
-        struct {
-            uint8_t frequencyTriggerWindowLengthShift : 4;
-            uint8_t frequencyTriggerThresholdPercentageMantissa : 4;
-            int8_t frequencyTriggerThresholdPercentageExponent : 3;
-        };
-        struct {
-            uint8_t enableAmplitudeThresholdDecibelScale : 1;
-            uint8_t amplitudeThresholdDecibels : 7;
-            uint8_t enableAmplitudeThresholdPercentageScale : 1;
-            uint8_t amplitudeThresholdPercentageMantissa : 4;
-            int8_t amplitudeThresholdPercentageExponent : 3;
-        };
-    };
     uint8_t enableEnergySaverMode : 1;
     uint8_t disable48HzDCBlockingFilter : 1;
-    uint8_t enableTimeSettingFromGPS : 1;
-    uint8_t enableMagneticSwitch : 1;
     uint8_t enableLowGainRange : 1;
-    uint8_t enableFrequencyTrigger : 1;
     uint8_t enableDailyFolders : 1;
 } configSettings_t;
 
 #pragma pack(pop)
 
-// TODO Add dual gain mode.  duplicate gain state, time fields.
-// TODO potentially this struct gets bigger and needs more space
 static const configSettings_t defaultConfigSettings = {
     .time = 0,
-    .gain = AM_GAIN_MEDIUM,
+    .gain1 = AM_GAIN_MEDIUM,
+    .gain2 = AM_GAIN_MEDIUM,
     .clockDivider = 4,
     .acquisitionCycles = 16,
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 5,
-    .recordDuration = 55,
+    .sleepDurationBetweenGains = 55,
+    .recordDurationGain1 = 5,
+    .sleepDurationMain = 5,
+    .recordDurationGain2 = 5,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
@@ -336,23 +321,11 @@ static const configSettings_t defaultConfigSettings = {
     .disableSleepRecordCycle = 0,
     .earliestRecordingTime = 0,
     .latestRecordingTime = 0,
-    .lowerFilterFreq = 0,
-    .higherFilterFreq = 0,
-    .amplitudeThreshold = 0,
     .requireAcousticConfiguration = 0,
     .batteryLevelDisplayType = BATTERY_LEVEL,
-    .minimumTriggerDuration = 0,
-    .enableAmplitudeThresholdDecibelScale = 0,
-    .amplitudeThresholdDecibels = 0,
-    .enableAmplitudeThresholdPercentageScale = 0,
-    .amplitudeThresholdPercentageMantissa = 0,
-    .amplitudeThresholdPercentageExponent = 0,
     .enableEnergySaverMode = 0,
     .disable48HzDCBlockingFilter = 0,
-    .enableTimeSettingFromGPS = 0,
-    .enableMagneticSwitch = 0,
     .enableLowGainRange = 0,
-    .enableFrequencyTrigger = 0,
     .enableDailyFolders = 0
 };
 
@@ -408,6 +381,7 @@ static void setHeaderDetails(wavHeader_t *wavHeader, uint32_t sampleRate, uint32
 
 }
 
+// TODO
 static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSettings, uint32_t currentTime, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, bool externalMicrophone, AM_recordingState_t recordingState, AM_filterType_t filterType) {
 
     struct tm time;
@@ -469,7 +443,7 @@ static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSet
     }
 
     static char *gainSettings[5] = {"low", "low-medium", "medium", "medium-high", "high"};
-
+// TODO just a printout
     comment += sprintf(comment, "at %s gain while battery was ", gainSettings[configSettings->gain]);
 
     if (extendedBatteryState == AM_EXT_BAT_LOW) {
@@ -508,46 +482,7 @@ static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSet
         comment += sprintf(comment, " with %us minimum trigger duration.", configSettings->minimumTriggerDuration);
 
     }
-    // TODO remove filters
-    uint16_t lowerFilterFreq = configSettings->lowerFilterFreq;
 
-    uint16_t higherFilterFreq = configSettings->higherFilterFreq;
-
-    if (filterType == LOW_PASS_FILTER) {
-
-        comment += sprintf(comment, " Low-pass filter with frequency of %01u.%01ukHz applied.", higherFilterFreq / 10, higherFilterFreq % 10);
-
-    } else if (filterType == BAND_PASS_FILTER) {
-
-        comment += sprintf(comment, " Band-pass filter with frequencies of %01u.%01ukHz and %01u.%01ukHz applied.", lowerFilterFreq / 10, lowerFilterFreq % 10, higherFilterFreq / 10, higherFilterFreq % 10);
-
-    } else if (filterType == HIGH_PASS_FILTER) {
-
-        comment += sprintf(comment, " High-pass filter with frequency of %01u.%01ukHz applied.", lowerFilterFreq / 10, lowerFilterFreq % 10);
-
-    }
-
-    if (amplitudeThresholdEnabled) {
-
-        comment += sprintf(comment, " Amplitude threshold was ");
-
-        if (configSettings->enableAmplitudeThresholdDecibelScale && configSettings->enableAmplitudeThresholdPercentageScale == false) {
-
-            comment += formatDecibels(comment, configSettings->amplitudeThresholdDecibels);
-
-        } else if (configSettings->enableAmplitudeThresholdPercentageScale && configSettings->enableAmplitudeThresholdDecibelScale == false) {
-
-            comment += formatPercentage(comment, configSettings->amplitudeThresholdPercentageMantissa, configSettings->amplitudeThresholdPercentageExponent);
-
-        } else {
-
-            comment += sprintf(comment, "%u", configSettings->amplitudeThreshold);
-
-        }
-
-        comment += sprintf(comment, " with %us minimum trigger duration.", configSettings->minimumTriggerDuration);
-
-    }
 
     if (recordingState != RECORDING_OKAY) {
 
@@ -560,10 +495,6 @@ static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSet
         } else if (recordingState == SWITCH_CHANGED) {
 
             comment += sprintf(comment, " due to switch position change.");
-
-        } else if (recordingState == MAGNETIC_SWITCH) {
-
-            comment += sprintf(comment, " by magnetic switch.");
 
         } else if (recordingState == SUPPLY_VOLTAGE_LOW) {
 
@@ -632,7 +563,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
     length = sprintf(configBuffer, "\r\n\r\nSample rate (Hz)                : %lu\r\n", configSettings->sampleRate / configSettings->sampleRateDivider);
 
     static char *gainSettings[5] = {"Low", "Low-Medium", "Medium", "Medium-High", "High"};
-
+// TODO
     length += sprintf(configBuffer + length, "Gain                            : %s\r\n\r\n", gainSettings[configSettings->gain]);
 
     length += sprintf(configBuffer + length, "Sleep duration (s)              : ");
@@ -758,80 +689,6 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     RETURN_BOOL_ON_ERROR(AudioMoth_writeToFile(configBuffer, length));
 
-    length = sprintf(configBuffer, "\r\n\r\nFilter                          : ");
-
-    if (configSettings->lowerFilterFreq == 0 && configSettings->higherFilterFreq == 0) {
-
-        length += sprintf(configBuffer + length, "-");
-
-    } else if (configSettings->lowerFilterFreq == UINT16_MAX) {
-
-        length += sprintf(configBuffer + length, "Low-pass (%u.%ukHz)", configSettings->higherFilterFreq / 10, configSettings->higherFilterFreq % 10);
-
-    } else if (configSettings->higherFilterFreq == UINT16_MAX) {
-
-        length += sprintf(configBuffer + length, "High-pass (%u.%ukHz)", configSettings->lowerFilterFreq / 10, configSettings->lowerFilterFreq % 10);
-
-    } else {
-
-        length += sprintf(configBuffer + length, "Band-pass (%u.%ukHz - %u.%ukHz)", configSettings->lowerFilterFreq / 10, configSettings->lowerFilterFreq % 10, configSettings->higherFilterFreq / 10, configSettings->higherFilterFreq % 10);
-
-    }
-
-    bool frequencyTriggerEnabled = configSettings->enableFrequencyTrigger;
-
-    bool amplitudeThresholdEnabled = frequencyTriggerEnabled ? false : configSettings->amplitudeThreshold > 0 || configSettings->enableAmplitudeThresholdDecibelScale || configSettings->enableAmplitudeThresholdPercentageScale;
-
-    length += sprintf(configBuffer + length, "\r\n\r\nTrigger type                    : ");
-
-    if (frequencyTriggerEnabled) {
-
-        length += sprintf(configBuffer + length, "Frequency (%u.%ukHz and window length of %u samples)", configSettings->frequencyTriggerCentreFrequency / 10, configSettings->frequencyTriggerCentreFrequency % 10, (0x01 << configSettings->frequencyTriggerWindowLengthShift));
-
-        length += sprintf(configBuffer + length, "\r\nThreshold setting               : ");
-
-        length += formatPercentage(configBuffer + length, configSettings->frequencyTriggerThresholdPercentageMantissa, configSettings->frequencyTriggerThresholdPercentageExponent);
-
-    } else if (amplitudeThresholdEnabled) {
-
-        length += sprintf(configBuffer + length, "Amplitude");
-
-        length += sprintf(configBuffer + length, "\r\nThreshold setting               : ");
-
-        if (configSettings->enableAmplitudeThresholdDecibelScale && configSettings->enableAmplitudeThresholdPercentageScale == false) {
-
-            length += formatDecibels(configBuffer + length, configSettings->amplitudeThresholdDecibels);
-
-        } else if (configSettings->enableAmplitudeThresholdPercentageScale && configSettings->enableAmplitudeThresholdDecibelScale == false) {
-
-            length += formatPercentage(configBuffer + length, configSettings->amplitudeThresholdPercentageMantissa, configSettings->amplitudeThresholdPercentageExponent);
-
-        } else {
-
-            length += sprintf(configBuffer + length, "%u", configSettings->amplitudeThreshold);
-
-        }
-
-    } else {
-
-        length += sprintf(configBuffer + length, "-");
-
-        length += sprintf(configBuffer + length, "\r\nThreshold setting               : -");
-
-    }
-
-    length += sprintf(configBuffer + length, "\r\nMinimum trigger duration (s)    : ");
-
-    if (frequencyTriggerEnabled || amplitudeThresholdEnabled) {
-
-        length += sprintf(configBuffer + length, "%u", configSettings->minimumTriggerDuration);
-
-    } else {
-
-        length += sprintf(configBuffer + length, "-");
-
-    }
-
     RETURN_BOOL_ON_ERROR(AudioMoth_writeToFile(configBuffer, length));
 
     length = sprintf(configBuffer, "\r\n\r\nEnable LED                      : %s\r\n", configSettings->enableLED ? "Yes" : "No");
@@ -850,10 +707,6 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     length += sprintf(configBuffer + length, "Enable low gain range           : %s\r\n\r\n", configSettings->enableLowGainRange ? "Yes" : "No");
 
-    length += sprintf(configBuffer + length, "Enable magnetic switch          : %s\r\n", configSettings->enableMagneticSwitch ? "Yes" : "No");
-    // TODO remove
-    length += sprintf(configBuffer + length, "Enable GPS time setting         : %s\r\n", configSettings->enableTimeSettingFromGPS ? "Yes" : "No");
-
     RETURN_BOOL_ON_ERROR(AudioMoth_writeToFile(configBuffer, length));
 
     RETURN_BOOL_ON_ERROR(AudioMoth_closeFile());
@@ -863,6 +716,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 }
 
 /* Backup domain variables */
+// TODO put in AM_DualGainStep_t
 
 static uint32_t *previousSwitchPosition = (uint32_t*)AM_BACKUP_DOMAIN_START_ADDRESS;
 
@@ -870,25 +724,21 @@ static uint32_t *timeOfNextRecording = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRES
 
 static uint32_t *durationOfNextRecording = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 8);
 
-static uint32_t *timeOfNextGPSTimeSetting = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 12);
+static AM_DualGainStep_t *gainOfNextRecording = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 12); //TODO size?  static?
 
 static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 16);
 
 static uint8_t *deploymentID = (uint8_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
 
-static uint32_t *readyToMakeRecordings = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 28);
+static uint32_t *readyToMakeRecordings = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 24);
 
-static uint32_t *shouldSetTimeFromGPS = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 32);
+static uint32_t *numberOfRecordingErrors = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 28);
 
-static uint32_t *numberOfRecordingErrors = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
+static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 32);
 
-static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
+static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
 
-static uint32_t *waitingForMagneticSwitch = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
-
-static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 48);
-
-static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 52);
+static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
 
 /* DMA transfer variable */
 
@@ -934,8 +784,6 @@ static uint8_t defaultDeploymentID[DEPLOYMENT_ID_LENGTH];
 
 /* Recording state */
 
-static volatile bool magneticSwitch;
-
 static volatile bool microphoneChanged;
 
 static volatile bool switchPositionChanged;
@@ -956,9 +804,9 @@ static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "DualGain-F
 
 static void flashLedToIndicateBatteryLife(void);
 
-static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecording, uint32_t *durationOfNextRecording, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod);
+static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecording, uint32_t *durationOfNextRecording, AM_DualGainStep_t *gainOfNextRecording, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod);
 
-static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds);
+static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration, AM_DualGainStep_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds);
 
 /* Functions of copy to and from the backup domain */
 
@@ -994,54 +842,12 @@ static bool isEnergySaverMode(configSettings_t *configSettings) {
 
 }
 
-/* Magnetic switch wait functions */
-
-static void startWaitingForMagneticSwitch() {
-
-    /* Flash LED to indicate start of waiting for magnetic switch */
-
-    FLASH_REPEAT_LED(Red, MAGNETIC_SWITCH_CHANGE_FLASHES, SHORT_LED_FLASH_DURATION);
-
-    /* Cancel any scheduled recording */
-
-    *timeOfNextRecording = UINT32_MAX;
-
-    *durationOfNextRecording = UINT32_MAX;
-
-    *timeOfNextGPSTimeSetting = UINT32_MAX;
-
-    *waitingForMagneticSwitch = true;
-
-}
-
-static void stopWaitingForMagneticSwitch(uint32_t *currentTime, uint32_t *currentMilliseconds) {
-
-    /* Flash LED to indicate end of waiting for magnetic switch */
-
-    FLASH_REPEAT_LED(Green, MAGNETIC_SWITCH_CHANGE_FLASHES, SHORT_LED_FLASH_DURATION);
-
-    /* Schedule next recording */
-
-    AudioMoth_getTime(currentTime, currentMilliseconds);
-
-    uint32_t scheduleTime = *currentTime + ROUNDED_UP_DIV(*currentMilliseconds + *recordingPreparationPeriod, MILLISECONDS_IN_SECOND);
-
-    scheduleRecording(scheduleTime, timeOfNextRecording, durationOfNextRecording, timeOfNextGPSTimeSetting, NULL);
-
-    *timeOfNextGPSTimeSetting = configSettings->enableTimeSettingFromGPS ? *timeOfNextGPSTimeSetting - GPS_MAX_TIME_SETTING_PERIOD : UINT32_MAX;
-
-    *waitingForMagneticSwitch = false;
-
-}
 
 /* Function to calculate the time to the next event */
-
-static void calculateTimeToNextEvent(uint32_t currentTime, uint32_t currentMilliseconds, int64_t *timeUntilPreparationStart, int64_t *timeUntilNextGPSTimeSetting) {
+// TODO take 4th argument away - header
+static void calculateTimeToNextEvent(uint32_t currentTime, uint32_t currentMilliseconds, int64_t *timeUntilPreparationStart) {
 
     *timeUntilPreparationStart = (int64_t)*timeOfNextRecording * MILLISECONDS_IN_SECOND - (int64_t)*recordingPreparationPeriod - (int64_t)currentTime * MILLISECONDS_IN_SECOND - (int64_t)currentMilliseconds;
-
-    *timeUntilNextGPSTimeSetting = (int64_t)*timeOfNextGPSTimeSetting * MILLISECONDS_IN_SECOND - (int64_t)currentTime * MILLISECONDS_IN_SECOND - (int64_t)currentMilliseconds;
-
 }
 
 /* Required time zone handler */
@@ -1084,26 +890,1454 @@ int main() {
 
     AM_switchPosition_t switchPosition = AudioMoth_getSwitchPosition();
 
-    if (switchPosition == AM_SWITCH_USB) {
+    if (AudioMoth_isInitialPowerUp()) {
 
-        /* Handle the case that the switch is in USB position. Waits in low energy state until USB disconnected or switch moved  */
+        /* Initialise recording schedule variables */  //TODO add AM_DualGainStep_t - as ptr?
 
-        AudioMoth_handleUSB();
+        *timeOfNextRecording = 0;
 
-    } else {
+        *durationOfNextRecording = UINT32_MAX;
 
-        /* Flash both LED */
+        *gainOfNextRecording = GAIN_STEP_1;
 
-        AudioMoth_setBothLED(true);
+        /* Initialise configuration writing variable */
 
-        AudioMoth_delay(100);
+        *writtenConfigurationToFile = false;
 
-        AudioMoth_setBothLED(false);
+        /* Initialise recording state variables */
+
+        *previousSwitchPosition = AM_SWITCH_NONE;
+
+        *readyToMakeRecordings = false;
+
+        *numberOfRecordingErrors = 0;
+
+        *recordingPreparationPeriod = INITIAL_PREPARATION_PERIOD;
+
+        /* Initialise the power down interval flag */
+
+        *poweredDownWithShortWaitInterval = false;
+
+        /* Copy default deployment ID */
+
+        copyToBackupDomain((uint32_t*)deploymentID, (uint8_t*)defaultDeploymentID, DEPLOYMENT_ID_LENGTH);
+
+        /* Check the persistent configuration */
+
+        persistentConfigSettings_t *persistentConfigSettings = (persistentConfigSettings_t*)AM_FLASH_USER_DATA_ADDRESS;
+
+        if (memcmp(persistentConfigSettings->firmwareVersion, firmwareVersion, AM_FIRMWARE_VERSION_LENGTH) == 0 && memcmp(persistentConfigSettings->firmwareDescription, firmwareDescription, AM_FIRMWARE_DESCRIPTION_LENGTH) == 0) {
+
+            copyToBackupDomain((uint32_t*)configSettings, (uint8_t*)&persistentConfigSettings->configSettings, sizeof(configSettings_t));
+
+        } else {
+
+            copyToBackupDomain((uint32_t*)configSettings, (uint8_t*)&defaultConfigSettings, sizeof(configSettings_t));
+
+        }
 
     }
 
-    /* Power down and wake up in one second */
+    /* Handle the case that the switch is in USB position  */
 
-    AudioMoth_powerDownAndWake(1, true);
+    if (switchPosition == AM_SWITCH_USB) {
+
+        if (configSettings->disableBatteryLevelDisplay == false && (*previousSwitchPosition == AM_SWITCH_DEFAULT || *previousSwitchPosition == AM_SWITCH_CUSTOM)) {
+
+            flashLedToIndicateBatteryLife();
+
+        }
+
+        AudioMoth_handleUSB();
+
+        SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
+
+    }
+
+        /* Read the time */
+
+    uint32_t currentTime;
+
+    uint32_t currentMilliseconds;
+
+    AudioMoth_getTime(&currentTime, &currentMilliseconds);
+
+    /* Check if switch has just been moved to CUSTOM or DEFAULT */
+
+    bool fileSystemEnabled = false;
+
+    bool writtenConfigurationToFileInThisSession = false;
+
+    if (switchPosition != *previousSwitchPosition) {
+
+        /* Reset the power down interval flag */
+
+        *poweredDownWithShortWaitInterval = false;
+
+        /* Check there are active recording periods if the switch is in CUSTOM position */
+
+        *readyToMakeRecordings = switchPosition == AM_SWITCH_DEFAULT || (switchPosition == AM_SWITCH_CUSTOM && configSettings->activeRecordingPeriods > 0);
+
+        /* Check if acoustic configuration is required */
+
+        if (*readyToMakeRecordings) {
+
+            /* Determine if acoustic configuration is required */
+
+            bool shouldPerformAcousticConfiguration = switchPosition == AM_SWITCH_CUSTOM && (AudioMoth_hasTimeBeenSet() == false || configSettings->requireAcousticConfiguration);
+
+            /* Determine whether to listen for the acoustic tone */
+
+            bool listenForAcousticTone = shouldPerformAcousticConfiguration == false && switchPosition == AM_SWITCH_CUSTOM;
+
+            if (listenForAcousticTone) {
+
+                AudioConfig_enableAudioConfiguration();
+
+                shouldPerformAcousticConfiguration = AudioConfig_listenForAudioConfigurationTone(AUDIO_CONFIG_TONE_TIMEOUT);
+
+            }
+
+            if (shouldPerformAcousticConfiguration) {
+
+                AudioMoth_setRedLED(true);
+
+                AudioMoth_setGreenLED(false);
+
+                audioConfigPulseCounter = 0;
+
+                audioConfigStateLED = false;
+
+                audioConfigToggleLED = false;
+
+                acousticConfigurationPerformed = false;
+
+                if (listenForAcousticTone == false) {
+
+                    AudioConfig_enableAudioConfiguration();
+
+                }
+
+                bool timedOut = AudioConfig_listenForAudioConfigurationPackets(listenForAcousticTone, AUDIO_CONFIG_PACKETS_TIMEOUT);
+
+                AudioConfig_disableAudioConfiguration();
+
+                if (acousticConfigurationPerformed) {
+
+                    /* Indicate success with LED flashes */
+
+                    AudioMoth_setRedLED(false);
+
+                    AudioMoth_setGreenLED(true);
+
+                    AudioMoth_delay(1000);
+
+                    AudioMoth_delay(1000);
+
+                    AudioMoth_setGreenLED(false);
+
+                    AudioMoth_delay(500);
+
+                } else if (listenForAcousticTone && timedOut) {
+
+                    /* Turn off LED */
+
+                    AudioMoth_setBothLED(false);
+
+                } else {
+
+                    /* Not ready to make a recording - no time set, no acoustic signal */
+
+                    *readyToMakeRecordings = false;
+
+                    /* Turn off LED */
+
+                    AudioMoth_setBothLED(false);
+
+                    /* Power down */
+
+                    SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
+
+                }
+
+            } else if (listenForAcousticTone) {
+
+                AudioConfig_disableAudioConfiguration();
+
+            } //end if shouldPerformAcousticConfiguration
+
+        } //end if readyToMakeRecordings
+
+        /* Calculate time of next recording if ready to make a recording
+        - in DEFAULT, or in CUSTOM with some schedule set and time has been set */
+
+        if (*readyToMakeRecordings) {
+
+            /* Enable energy saver mode */
+
+            if (isEnergySaverMode(configSettings)) AudioMoth_setClockDivider(AM_HF_CLK_DIV2);
+
+            /* Reset the recording error counter */
+
+            *numberOfRecordingErrors = 0;
+
+            /* Reset the recording preparation period to default */
+
+            *recordingPreparationPeriod = INITIAL_PREPARATION_PERIOD;
+
+            /* Reset persistent configuration write flag */
+
+            *writtenConfigurationToFile = false;
+
+            /* Try to write configuration to file */
+
+            fileSystemEnabled = AudioMoth_enableFileSystem(configSettings->sampleRateDivider == 1 ? AM_SD_CARD_HIGH_SPEED : AM_SD_CARD_NORMAL_SPEED);
+
+            if (fileSystemEnabled) writtenConfigurationToFileInThisSession = writeConfigurationToFile(configSettings, firmwareDescription, firmwareVersion, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID);
+
+            /* Update the time and calculate earliest schedule start time */
+
+            AudioMoth_getTime(&currentTime, &currentMilliseconds);
+
+            uint32_t scheduleTime = currentTime + ROUNDED_UP_DIV(currentMilliseconds + *recordingPreparationPeriod, MILLISECONDS_IN_SECOND);
+
+            /* Schedule the next recording */
+
+            if (switchPosition == AM_SWITCH_CUSTOM) {
+
+                scheduleRecording(scheduleTime, timeOfNextRecording, durationOfNextRecording, gainOfNextRecording, timeOfNextGPSTimeSetting, NULL); //tODO GPS
+
+            }
+
+
+            /* Set parameters to start recording now */
+
+            if (switchPosition == AM_SWITCH_DEFAULT) {
+
+                *timeOfNextRecording = scheduleTime;
+
+                *durationOfNextRecording = UINT32_MAX;
+
+                *gainOfNextRecording = GAIN_STEP_1;
+
+            }
+
+        } // end if *readyToMakeRecordings
+
+    } // end if (switchPosition != *previousSwitchPosition)
+
+    /* If not ready to make a recording then flash LED and power down */
+
+    if (*readyToMakeRecordings == false) {
+
+        FLASH_LED(Both, SHORT_LED_FLASH_DURATION)
+
+        SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
+
+    }
+
+    /* Reset LED flags */
+
+    bool enableLED = (switchPosition == AM_SWITCH_DEFAULT) || configSettings->enableLED;
+
+    bool shouldSuppressLED = *poweredDownWithShortWaitInterval;
+
+    *poweredDownWithShortWaitInterval = false;
+
+    /* Calculate time until next activity */
+
+    int64_t timeUntilPreparationStart;
+
+    calculateTimeToNextEvent(currentTime, currentMilliseconds, &timeUntilPreparationStart);
+
+    /* Make a recording */
+
+    if (timeUntilPreparationStart <= 0) {
+
+        /* Enable energy saver mode */
+
+        if (isEnergySaverMode(configSettings)) AudioMoth_setClockDivider(AM_HF_CLK_DIV2);
+
+        /* Write configuration if not already done so */
+
+        if (writtenConfigurationToFileInThisSession == false && *writtenConfigurationToFile == false) {
+
+            if (!fileSystemEnabled) fileSystemEnabled = AudioMoth_enableFileSystem(configSettings->sampleRateDivider == 1 ? AM_SD_CARD_HIGH_SPEED : AM_SD_CARD_NORMAL_SPEED);
+
+            if (fileSystemEnabled) *writtenConfigurationToFile = writeConfigurationToFile(configSettings, firmwareDescription, firmwareVersion, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID);
+
+        }
+
+        /* Make the recording */
+
+        uint32_t fileOpenTime;
+
+        uint32_t fileOpenMilliseconds;
+
+        AM_recordingState_t recordingState = RECORDING_OKAY;
+
+        /* Measure battery voltage */
+
+        uint32_t supplyVoltage = AudioMoth_getSupplyVoltage();
+
+        AM_extendedBatteryState_t extendedBatteryState = AudioMoth_getExtendedBatteryState(supplyVoltage);
+
+        /* Check if low voltage check is enabled and that the voltage is okay */
+
+        bool okayToMakeRecording = true;
+
+        if (configSettings->enableLowVoltageCutoff) {
+
+            AudioMoth_enableSupplyMonitor();
+
+            AudioMoth_setSupplyMonitorThreshold(MINIMUM_SUPPLY_VOLTAGE);
+
+            okayToMakeRecording = AudioMoth_isSupplyAboveThreshold();
+
+        }
+
+        /* Make recording if okay */
+
+        if (okayToMakeRecording) {
+
+            AudioMoth_enableTemperature();
+
+            int32_t temperature = AudioMoth_getTemperature();
+
+            AudioMoth_disableTemperature();
+
+            if (!fileSystemEnabled) fileSystemEnabled = AudioMoth_enableFileSystem(configSettings->sampleRateDivider == 1 ? AM_SD_CARD_HIGH_SPEED : AM_SD_CARD_NORMAL_SPEED);
+
+            if (fileSystemEnabled)  {
+                // TODO main event !
+                //TODO put in correct time and duration
+                recordingState = makeRecording(*timeOfNextRecording, *durationOfNextRecording, *gainOfNextRecording, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+
+            } else {
+
+                FLASH_LED(Both, LONG_LED_FLASH_DURATION);
+
+                recordingState = SDCARD_WRITE_ERROR;
+
+            }
+
+        } else {
+
+            recordingState = SUPPLY_VOLTAGE_LOW;
+
+        }
+
+        /* Disable low voltage monitor if it was used */
+
+        if (configSettings->enableLowVoltageCutoff) AudioMoth_disableSupplyMonitor();
+
+        /* Enable the error warning flashes */
+
+        if (recordingState == SUPPLY_VOLTAGE_LOW) {
+
+            AudioMoth_delay(LONG_LED_FLASH_DURATION);
+
+            FLASH_LED(Both, LONG_LED_FLASH_DURATION);
+
+            *numberOfRecordingErrors += 1;
+
+        }
+
+        if (recordingState == SDCARD_WRITE_ERROR) {
+
+            *numberOfRecordingErrors += 1;
+
+        }
+
+        /* Update the preparation period */
+
+        if (recordingState != SDCARD_WRITE_ERROR) {
+
+            int64_t measuredPreparationPeriod = (int64_t)fileOpenTime * MILLISECONDS_IN_SECOND + (int64_t)fileOpenMilliseconds - (int64_t)currentTime * MILLISECONDS_IN_SECOND - (int64_t)currentMilliseconds;
+
+            *recordingPreparationPeriod = MIN(MAXIMUM_PREPARATION_PERIOD, MAX(MINIMUM_PREPARATION_PERIOD, measuredPreparationPeriod + PREPARATION_PERIOD_INCREMENT));
+
+        }
+
+        /* Update the time and calculate earliest schedule start time */
+
+        AudioMoth_getTime(&currentTime, &currentMilliseconds);
+
+        uint32_t scheduleTime = currentTime + ROUNDED_UP_DIV(currentMilliseconds + *recordingPreparationPeriod, MILLISECONDS_IN_SECOND);
+
+        /* Schedule the next recording */
+
+        if (*numberOfRecordingErrors >= MAXIMUM_NUMBER_OF_RECORDING_ERRORS) {
+
+            /* Cancel the schedule */
+
+            *timeOfNextRecording = UINT32_MAX;
+
+            *durationOfNextRecording = 0;
+
+            *gainOfNextRecording = GAIN_STEP_1;
+
+        } else if (switchPosition == AM_SWITCH_CUSTOM) {
+
+            /* Update schedule time as if the recording has ended correctly */
+
+            if (recordingState == RECORDING_OKAY || recordingState == SUPPLY_VOLTAGE_LOW || recordingState == SDCARD_WRITE_ERROR) {
+
+                scheduleTime = MAX(scheduleTime, *timeOfNextRecording + *durationOfNextRecording);
+
+            }
+
+            /* Calculate the next recording schedule */
+
+            scheduleRecording(scheduleTime, timeOfNextRecording, durationOfNextRecording, gainOfNextRecording, timeOfNextGPSTimeSetting, NULL);
+
+
+        } else {
+
+            /* Set parameters to start recording now */
+
+            *timeOfNextRecording = scheduleTime;
+
+            *gainOfNextRecording = GAIN_STEP_1;
+
+            *durationOfNextRecording = UINT32_MAX;
+
+            *timeOfNextGPSTimeSetting = UINT32_MAX;
+
+        }
+
+         /* Power down with short interval if the next recording is due */
+
+        if (switchPosition == AM_SWITCH_CUSTOM) {
+
+            calculateTimeToNextEvent(currentTime, currentMilliseconds, &timeUntilPreparationStart);
+
+            if (timeUntilPreparationStart < DEFAULT_WAIT_INTERVAL) {
+
+                *poweredDownWithShortWaitInterval = true;
+
+                SAVE_SWITCH_POSITION_AND_POWER_DOWN(SHORT_WAIT_INTERVAL);
+
+            }
+
+        }
+
+        /* Power down */
+
+        SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
+
+    }
+
+    /* Power down if switch position has changed */
+
+    if (switchPosition != *previousSwitchPosition) SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
+
+    /* Calculate the wait intervals */
+
+    int64_t waitIntervalMilliseconds = WAITING_LED_FLASH_INTERVAL;
+
+    uint32_t waitIntervalSeconds = WAITING_LED_FLASH_INTERVAL / MILLISECONDS_IN_SECOND;
+
+    /* Wait for the next event whilst flashing the LED */
+
+    bool startedRealTimeClock = false;
+
+    while (true) {
+
+        /* Update the time */
+
+        AudioMoth_getTime(&currentTime, &currentMilliseconds);
+
+        /* Calculate the time to the next event */
+
+        calculateTimeToNextEvent(currentTime, currentMilliseconds, &timeUntilPreparationStart);
+
+        int64_t timeToEarliestEvent = timeUntilPreparationStart;
+
+        /* Flash LED */
+
+        bool shouldFlashLED = enableLED && shouldSuppressLED == false && timeToEarliestEvent > MINIMUM_LED_FLASH_INTERVAL;
+
+        if (shouldFlashLED) {
+
+            if (*numberOfRecordingErrors > 0) {
+
+                FLASH_LED(Both, WAITING_LED_FLASH_DURATION);
+
+            } else {
+
+                FLASH_LED(Green, WAITING_LED_FLASH_DURATION);
+
+            }
+
+        }
+
+        /* Check there is time to sleep */
+
+        if (timeToEarliestEvent < waitIntervalMilliseconds) {
+
+            /* Calculate the remaining time to power down */
+
+            uint32_t timeToWait = timeToEarliestEvent < 0 ? 0 : timeToEarliestEvent;
+
+            SAVE_SWITCH_POSITION_AND_POWER_DOWN(timeToWait);
+
+        }
+
+        /* Start the real time clock if it isn't running */
+
+        if (startedRealTimeClock == false) {
+
+            AudioMoth_startRealTimeClock(waitIntervalSeconds);
+
+            startedRealTimeClock = true;
+
+        }
+
+        /* Enter deep sleep */
+
+        AudioMoth_deepSleep();
+
+        /* Handle time overflow on awakening */
+
+        AudioMoth_checkAndHandleTimeOverflow();
+
+    }
+
+} // end main()
+
+/* AudioMoth interrupt handlers */
+
+inline void AudioMoth_handleMicrophoneChangeInterrupt() {
+
+    microphoneChanged = true;
 
 }
+
+
+inline void AudioMoth_handleSwitchInterrupt() {
+
+    switchPositionChanged = true;
+
+    AudioConfig_cancelAudioConfiguration();
+
+}
+
+inline void AudioMoth_handleDirectMemoryAccessInterrupt(bool isPrimaryBuffer, int16_t **nextBuffer) {
+
+    int16_t *source = secondaryBuffer;
+
+    if (isPrimaryBuffer) source = primaryBuffer;
+
+    /* Apply filter to samples */
+
+    bool thresholdExceeded = DigitalFilter_applyFilter(source, buffers[writeBuffer] + writeBufferIndex, configSettings->sampleRateDivider, numberOfRawSamplesInDMATransfer);
+
+    numberOfDMATransfers += 1;
+
+    /* Update the current buffer index and write buffer if wait period is over */
+
+    if (numberOfDMATransfers > numberOfDMATransfersToWait) {
+
+        writeIndicator[writeBuffer] |= thresholdExceeded;
+
+        writeBufferIndex += numberOfRawSamplesInDMATransfer / configSettings->sampleRateDivider;
+
+        if (writeBufferIndex == NUMBER_OF_SAMPLES_IN_BUFFER) {
+
+            writeBufferIndex = 0;
+
+            writeBuffer = (writeBuffer + 1) & (NUMBER_OF_BUFFERS - 1);
+
+            writeIndicator[writeBuffer] = false;
+
+        }
+
+    }
+
+}
+
+/* AudioMoth USB message handlers */
+
+inline void AudioMoth_usbFirmwareVersionRequested(uint8_t **firmwareVersionPtr) {
+
+    *firmwareVersionPtr = firmwareVersion;
+
+}
+
+inline void AudioMoth_usbFirmwareDescriptionRequested(uint8_t **firmwareDescriptionPtr) {
+
+    *firmwareDescriptionPtr = firmwareDescription;
+
+}
+
+inline void AudioMoth_usbApplicationPacketRequested(uint32_t messageType, uint8_t *transmitBuffer, uint32_t size) {
+
+    /* Copy the current time to the USB packet */
+
+    uint32_t currentTime;
+
+    AudioMoth_getTime(&currentTime, NULL);
+
+    memcpy(transmitBuffer + 1, &currentTime, UINT32_SIZE_IN_BYTES);
+
+    /* Copy the unique ID to the USB packet */
+
+    memcpy(transmitBuffer + 5, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, AM_UNIQUE_ID_SIZE_IN_BYTES);
+
+    /* Copy the battery state to the USB packet */
+
+    uint32_t supplyVoltage = AudioMoth_getSupplyVoltage();
+
+    AM_batteryState_t batteryState = AudioMoth_getBatteryState(supplyVoltage);
+
+    memcpy(transmitBuffer + 5 + AM_UNIQUE_ID_SIZE_IN_BYTES, &batteryState, 1);
+
+    /* Copy the firmware version to the USB packet */
+
+    memcpy(transmitBuffer + 6 + AM_UNIQUE_ID_SIZE_IN_BYTES, firmwareVersion, AM_FIRMWARE_VERSION_LENGTH);
+
+    /* Copy the firmware description to the USB packet */
+
+    memcpy(transmitBuffer + 6 + AM_UNIQUE_ID_SIZE_IN_BYTES + AM_FIRMWARE_VERSION_LENGTH, firmwareDescription, AM_FIRMWARE_DESCRIPTION_LENGTH);
+
+}
+
+inline void AudioMoth_usbApplicationPacketReceived(uint32_t messageType, uint8_t* receiveBuffer, uint8_t *transmitBuffer, uint32_t size) {
+
+    /* Make persistent configuration settings data structure */
+
+    static persistentConfigSettings_t persistentConfigSettings __attribute__ ((aligned(UINT32_SIZE_IN_BYTES)));
+
+    memcpy(&persistentConfigSettings.firmwareVersion, &firmwareVersion, AM_FIRMWARE_VERSION_LENGTH);
+
+    memcpy(&persistentConfigSettings.firmwareDescription, &firmwareDescription, AM_FIRMWARE_DESCRIPTION_LENGTH);
+
+    memcpy(&persistentConfigSettings.configSettings, receiveBuffer + 1,  sizeof(configSettings_t));
+
+    /* Implement energy saver mode changes */
+
+    if (isEnergySaverMode(&persistentConfigSettings.configSettings)) {
+
+        persistentConfigSettings.configSettings.sampleRate /= 2;
+        persistentConfigSettings.configSettings.clockDivider /= 2;
+        persistentConfigSettings.configSettings.sampleRateDivider /= 2;
+
+    }
+
+    /* Copy persistent configuration settings to flash */
+
+    uint32_t numberOfBytes = ROUND_UP_TO_MULTIPLE(sizeof(persistentConfigSettings_t), UINT32_SIZE_IN_BYTES);
+
+    bool success = AudioMoth_writeToFlashUserDataPage((uint8_t*)&persistentConfigSettings, numberOfBytes);
+
+    if (success) {
+
+        /* Copy the USB packet contents to the back-up register data structure location */
+
+        copyToBackupDomain((uint32_t*)configSettings, (uint8_t*)&persistentConfigSettings.configSettings, sizeof(configSettings_t));
+
+        /* Copy the back-up register data structure to the USB packet */
+
+        copyFromBackupDomain(transmitBuffer + 1, (uint32_t*)configSettings, sizeof(configSettings_t));
+
+        /* Revert energy saver mode changes */
+
+        configSettings_t *tempConfigSettings = (configSettings_t*)(transmitBuffer + 1);
+
+        if (isEnergySaverMode(tempConfigSettings)) {
+
+            tempConfigSettings->sampleRate *= 2;
+            tempConfigSettings->clockDivider *= 2;
+            tempConfigSettings->sampleRateDivider *= 2;
+
+        }
+
+        /* Set the time */
+
+        AudioMoth_setTime(configSettings->time, USB_CONFIG_TIME_CORRECTION);
+
+    } else {
+
+        /* Return blank configuration as error indicator */
+
+        memset(transmitBuffer + 1, 0, sizeof(configSettings_t));
+
+    }
+
+}
+
+/* Audio configuration handlers */
+
+inline void AudioConfig_handleAudioConfigurationEvent(AC_audioConfigurationEvent_t event) {
+
+    if (event == AC_EVENT_PULSE) {
+
+        audioConfigPulseCounter = (audioConfigPulseCounter + 1) % AUDIO_CONFIG_PULSE_INTERVAL;
+
+    } else if (event == AC_EVENT_START) {
+
+        audioConfigStateLED = true;
+
+        audioConfigToggleLED = true;
+
+        AudioMoth_getTime(&secondsOfAcousticSignalStart, &millisecondsOfAcousticSignalStart);
+
+    } else if (event == AC_EVENT_BYTE) {
+
+        audioConfigToggleLED = !audioConfigToggleLED;
+
+    } else if (event == AC_EVENT_BIT_ERROR || event == AC_EVENT_CRC_ERROR) {
+
+        audioConfigStateLED = false;
+
+    }
+
+    AudioMoth_setGreenLED((audioConfigStateLED && audioConfigToggleLED) || (!audioConfigStateLED && !audioConfigPulseCounter));
+
+}
+
+inline void AudioConfig_handleAudioConfigurationPacket(uint8_t *receiveBuffer, uint32_t size) {
+
+    bool isTimePacket = size == (UINT32_SIZE_IN_BYTES + UINT16_SIZE_IN_BYTES);
+
+    bool isDeploymentPacket = size == (UINT32_SIZE_IN_BYTES + UINT16_SIZE_IN_BYTES + DEPLOYMENT_ID_LENGTH);
+
+    if (isTimePacket || isDeploymentPacket) {
+
+        /* Copy time from the packet */
+
+        uint32_t time;
+
+        memcpy(&time, receiveBuffer, UINT32_SIZE_IN_BYTES);
+
+        /* Calculate the time correction */
+
+        uint32_t secondsOfAcousticSignalEnd;
+
+        uint32_t millisecondsOfAcousticSignalEnd;
+
+        AudioMoth_getTime(&secondsOfAcousticSignalEnd, &millisecondsOfAcousticSignalEnd);
+
+        uint32_t millisecondTimeOffset = (secondsOfAcousticSignalEnd - secondsOfAcousticSignalStart) * MILLISECONDS_IN_SECOND + millisecondsOfAcousticSignalEnd - millisecondsOfAcousticSignalStart + AUDIO_CONFIG_TIME_CORRECTION;
+
+        /* Set the time */
+
+        AudioMoth_setTime(time + millisecondTimeOffset / MILLISECONDS_IN_SECOND, millisecondTimeOffset % MILLISECONDS_IN_SECOND);
+
+        /* Set deployment */
+
+        if (isDeploymentPacket) {
+
+            copyToBackupDomain((uint32_t*)deploymentID, receiveBuffer + UINT32_SIZE_IN_BYTES + UINT16_SIZE_IN_BYTES, DEPLOYMENT_ID_LENGTH);
+
+        }
+
+        /* Indicate success */
+
+        AudioConfig_cancelAudioConfiguration();
+
+        acousticConfigurationPerformed = true;
+
+    }
+
+    /* Reset receive state */
+
+    audioConfigStateLED = false;
+
+}
+
+/* Clear and encode the compression buffer */
+
+static void clearCompressionBuffer() {
+
+    for (uint32_t i = 0; i < COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE; i += 1) {
+
+        compressionBuffer[i] = 0;
+
+    }
+
+}
+
+static void encodeCompressionBuffer(uint32_t numberOfCompressedBuffers) {
+
+    for (uint32_t i = 0; i < UINT32_SIZE_IN_BITS; i += 1) {
+
+        compressionBuffer[i] = numberOfCompressedBuffers & 0x01 ? 1 : -1;
+
+        numberOfCompressedBuffers >>= 1;
+
+    }
+
+    for (uint32_t i = UINT32_SIZE_IN_BITS; i < COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE; i += 1) {
+
+        compressionBuffer[i] = 0;
+
+    }
+
+}
+
+/* Generate foldername and filename from time */ //TODO
+
+static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, bool prefixFoldername, bool triggeredRecording) {
+
+    struct tm time;
+
+    time_t rawTime = timestamp + configSettings->timezoneHours * SECONDS_IN_HOUR + configSettings->timezoneMinutes * SECONDS_IN_MINUTE;
+
+    gmtime_r(&rawTime, &time);
+
+    sprintf(foldername, "%04d%02d%02d", YEAR_OFFSET + time.tm_year, MONTH_OFFSET + time.tm_mon, time.tm_mday);
+
+    uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
+
+    length += sprintf(filename + length, "%s_%02d%02d%02d", foldername, time.tm_hour, time.tm_min, time.tm_sec);
+
+    char *extension = triggeredRecording ? "T.WAV" : ".WAV";
+
+    strcpy(filename + length, extension);
+
+}
+
+
+/* Save recording to SD card */
+
+static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration,  AM_DualGainStep_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds) {
+
+    /* Initialise buffers */
+
+    writeBuffer = 0;
+
+    writeBufferIndex = 0;
+
+    buffers[0] = (int16_t*)AM_EXTERNAL_SRAM_START_ADDRESS;
+
+    for (uint32_t i = 1; i < NUMBER_OF_BUFFERS; i += 1) {
+        buffers[i] = buffers[i - 1] + NUMBER_OF_SAMPLES_IN_BUFFER;
+    }
+
+    /* Calculate effective sample rate */
+
+    uint32_t effectiveSampleRate = configSettings->sampleRate / configSettings->sampleRateDivider;
+
+    /* Calculate the sample multiplier */
+
+    float sampleMultiplier = 16.0f / (float)(configSettings->oversampleRate * configSettings->sampleRateDivider);
+
+    if (AudioMoth_hasInvertedOutput()) sampleMultiplier = -sampleMultiplier;
+
+    DigitalFilter_setAdditionalGain(sampleMultiplier);
+
+    /* Calculate the number of samples in each DMA transfer (while ensuring that number of samples written to the SRAM buffer on each DMA transfer is a power of two so each SRAM buffer is filled after an integer number of DMA transfers) */
+
+    numberOfRawSamplesInDMATransfer = MAXIMUM_SAMPLES_IN_DMA_TRANSFER / configSettings->sampleRateDivider;
+
+    while (numberOfRawSamplesInDMATransfer & (numberOfRawSamplesInDMATransfer - 1)) {
+
+        numberOfRawSamplesInDMATransfer = numberOfRawSamplesInDMATransfer & (numberOfRawSamplesInDMATransfer - 1);
+
+    }
+
+    numberOfRawSamplesInDMATransfer *= configSettings->sampleRateDivider;
+
+    /* Calculate the minimum amplitude threshold duration */
+
+    uint32_t minimumNumberOfTriggeredBuffersToWrite = ROUNDED_UP_DIV(configSettings->minimumTriggerDuration * effectiveSampleRate, NUMBER_OF_SAMPLES_IN_BUFFER);
+
+    /* Initialise termination conditions */
+
+    microphoneChanged = false;
+
+    bool supplyVoltageLow = false;
+
+    /* Initialise microphone for recording */
+
+    AudioMoth_enableExternalSRAM();
+// TODO ??
+    AM_gainRange_t gainRange = configSettings->enableLowGainRange ? AM_LOW_GAIN_RANGE : AM_NORMAL_GAIN_RANGE;
+
+    AM_gainSetting_t currentGain =  (gainOfNextRecording==GAIN_STEP_1) ? configSettings->gain1 :  configSettings->gain2
+
+    bool externalMicrophone = AudioMoth_enableMicrophone(gainRange, currentGain, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
+
+    AudioMoth_initialiseDirectMemoryAccess(primaryBuffer, secondaryBuffer, numberOfRawSamplesInDMATransfer);
+
+    /* Show LED for SD card activity */
+
+    if (enableLED) AudioMoth_setRedLED(true);
+
+    /* Open a file with the current local time as the name */
+
+    static char filename[MAXIMUM_FILE_NAME_LENGTH];
+
+    static char foldername[MAXIMUM_FILE_NAME_LENGTH];
+// TODO
+    generateFolderAndFilename(foldername, filename, timeOfNextRecording, configSettings->enableDailyFolders, frequencyTriggerEnabled || amplitudeThresholdEnabled);
+
+    if (configSettings->enableDailyFolders) {
+
+        bool directoryExists = AudioMoth_doesDirectoryExist(foldername);
+
+        if (directoryExists == false) FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_makeDirectory(foldername));
+
+    }
+
+    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_openFile(filename));
+
+    AudioMoth_setRedLED(false);
+
+    /* Measure the time difference from the start time */
+
+    AudioMoth_getTime(fileOpenTime, fileOpenMilliseconds);
+
+    /* Calculate time correction for sample rate due to file header */
+
+    uint32_t numberOfSamplesInHeader = sizeof(wavHeader_t) / NUMBER_OF_BYTES_IN_SAMPLE;
+
+    int32_t sampleRateTimeOffset = ROUNDED_DIV(numberOfSamplesInHeader * MILLISECONDS_IN_SECOND, effectiveSampleRate);
+
+    /* Calculate time until the recording should start */
+
+    int64_t millisecondsUntilRecordingShouldStart = (int64_t)timeOfNextRecording * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenTime * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenMilliseconds - (int64_t)sampleRateTimeOffset;
+
+    /* Calculate the actual recording start time if the intended start has been missed */
+
+    uint32_t timeOffset = millisecondsUntilRecordingShouldStart < 0 ? 1 - millisecondsUntilRecordingShouldStart / MILLISECONDS_IN_SECOND : 0;
+
+    recordDuration = timeOffset >= recordDuration ? 0 : recordDuration - timeOffset;
+
+    millisecondsUntilRecordingShouldStart += timeOffset * MILLISECONDS_IN_SECOND;
+
+    /* Calculate the period to wait before starting the DMA transfers */
+
+    uint32_t numberOfRawSamplesPerMillisecond = configSettings->sampleRate / MILLISECONDS_IN_SECOND;
+
+    uint32_t numberOfRawSamplesToWait = millisecondsUntilRecordingShouldStart * numberOfRawSamplesPerMillisecond;
+
+    numberOfDMATransfersToWait = numberOfRawSamplesToWait / numberOfRawSamplesInDMATransfer;
+
+    uint32_t remainingNumberOfRawSamples = numberOfRawSamplesToWait % numberOfRawSamplesInDMATransfer;
+
+    uint32_t remainingMillisecondsToWait = ROUNDED_DIV(remainingNumberOfRawSamples, numberOfRawSamplesPerMillisecond);
+
+    /* Calculate updated recording parameters */
+
+    uint32_t maximumNumberOfSeconds = (MAXIMUM_WAV_FILE_SIZE - sizeof(wavHeader_t)) / NUMBER_OF_BYTES_IN_SAMPLE / effectiveSampleRate;
+
+    bool fileSizeLimited = (recordDuration > maximumNumberOfSeconds);
+
+    uint32_t numberOfSamples = effectiveSampleRate * (fileSizeLimited ? maximumNumberOfSeconds : recordDuration);
+
+    /* Initialise main loop variables */
+
+    uint32_t readBuffer = 0;
+
+    uint32_t samplesWritten = 0;
+
+    uint32_t buffersProcessed = 0;
+
+    uint32_t numberOfCompressedBuffers = 0;
+
+    uint32_t totalNumberOfCompressedSamples = 0;
+
+    uint32_t numberOfTriggeredBuffersWritten = 0;
+
+    bool triggerHasOccurred = false;
+
+    /* Start processing DMA transfers */
+
+    numberOfDMATransfers = 0;
+
+    AudioMoth_delay(remainingMillisecondsToWait);
+
+    AudioMoth_startMicrophoneSamples(configSettings->sampleRate);
+
+    /* Main recording loop */
+
+    while (samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !magneticSwitch && !supplyVoltageLow) {
+
+        while (readBuffer != writeBuffer && samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !magneticSwitch && !supplyVoltageLow) {
+
+            /* Determine the appropriate number of bytes to the SD card */
+
+            uint32_t numberOfSamplesToWrite = MIN(numberOfSamples + numberOfSamplesInHeader - samplesWritten, NUMBER_OF_SAMPLES_IN_BUFFER);
+
+            /* Check if this buffer should actually be written to the SD card */
+
+            bool writeIndicated = (amplitudeThresholdEnabled == false && frequencyTriggerEnabled == false) || writeIndicator[readBuffer];
+
+            if (frequencyTriggerEnabled && configSettings->sampleRateDivider > 1) writeIndicated = DigitalFilter_applyFrequencyTrigger(buffers[readBuffer], NUMBER_OF_SAMPLES_IN_BUFFER);
+
+            /* Ensure the minimum number of buffers will be written */
+
+            triggerHasOccurred |= writeIndicated;
+
+            numberOfTriggeredBuffersWritten = writeIndicated ? 0 : numberOfTriggeredBuffersWritten + 1;
+
+            bool shouldWriteThisSector = writeIndicated || (triggerHasOccurred && numberOfTriggeredBuffersWritten < minimumNumberOfTriggeredBuffersToWrite);
+
+            /* Compress the buffer or write the buffer to SD card */
+
+            if (shouldWriteThisSector == false && buffersProcessed > 0 && numberOfSamplesToWrite == NUMBER_OF_SAMPLES_IN_BUFFER) {
+
+                numberOfCompressedBuffers += NUMBER_OF_BYTES_IN_SAMPLE * NUMBER_OF_SAMPLES_IN_BUFFER / COMPRESSION_BUFFER_SIZE_IN_BYTES;
+
+            } else {
+
+                /* Light LED during SD card write if appropriate */
+
+                if (enableLED) AudioMoth_setRedLED(true);
+
+                /* Encode and write compression buffer */
+
+                if (numberOfCompressedBuffers > 0) {
+
+                    encodeCompressionBuffer(numberOfCompressedBuffers);
+
+                    totalNumberOfCompressedSamples += (numberOfCompressedBuffers - 1) * COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE;
+
+                    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(compressionBuffer, COMPRESSION_BUFFER_SIZE_IN_BYTES));
+
+                    numberOfCompressedBuffers = 0;
+
+                }
+
+                /* Either write the buffer or write a blank buffer */
+
+                if (shouldWriteThisSector) {
+
+                    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(buffers[readBuffer], NUMBER_OF_BYTES_IN_SAMPLE * numberOfSamplesToWrite));
+
+                } else {
+
+                    clearCompressionBuffer();
+
+                    uint32_t numberOfBlankSamplesToWrite = numberOfSamplesToWrite;
+
+                    while (numberOfBlankSamplesToWrite > 0) {
+
+                        uint32_t numberOfSamples = MIN(numberOfBlankSamplesToWrite, COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE);
+
+                        FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(compressionBuffer, NUMBER_OF_BYTES_IN_SAMPLE * numberOfSamples));
+
+                        numberOfBlankSamplesToWrite -= numberOfSamples;
+
+                    }
+
+                }
+
+                /* Clear LED */
+
+                AudioMoth_setRedLED(false);
+
+            }
+
+            /* Increment buffer counters */
+
+            readBuffer = (readBuffer + 1) & (NUMBER_OF_BUFFERS - 1);
+
+            samplesWritten += numberOfSamplesToWrite;
+
+            buffersProcessed += 1;
+
+        }
+
+        /* Check the voltage level */
+
+        if (configSettings->enableLowVoltageCutoff && AudioMoth_isSupplyAboveThreshold() == false) {
+
+            supplyVoltageLow = true;
+
+        }
+
+        /* Sleep until next DMA transfer is complete */
+
+        AudioMoth_sleep();
+
+    }
+
+    /* Write the compression buffer files at the end */
+
+    if (samplesWritten < numberOfSamples + numberOfSamplesInHeader && numberOfCompressedBuffers > 0) {
+
+        /* Light LED during SD card write if appropriate */
+
+        if (enableLED) AudioMoth_setRedLED(true);
+
+        /* Encode and write compression buffer */
+
+        encodeCompressionBuffer(numberOfCompressedBuffers);
+
+        totalNumberOfCompressedSamples += (numberOfCompressedBuffers - 1) * COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE;
+
+        FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(compressionBuffer, COMPRESSION_BUFFER_SIZE_IN_BYTES));
+
+        /* Clear LED */
+
+        AudioMoth_setRedLED(false);
+
+    }
+
+    /* Determine recording state */
+
+    AM_recordingState_t recordingState = microphoneChanged ? MICROPHONE_CHANGED :
+                                         switchPositionChanged ? SWITCH_CHANGED :
+                                         magneticSwitch ? MAGNETIC_SWITCH :
+                                         supplyVoltageLow ? SUPPLY_VOLTAGE_LOW :
+                                         fileSizeLimited ? FILE_SIZE_LIMITED :
+                                         RECORDING_OKAY;
+
+    /* Initialise the WAV header */
+
+    samplesWritten = MAX(numberOfSamplesInHeader, samplesWritten);
+
+    setHeaderDetails(&wavHeader, effectiveSampleRate, samplesWritten - numberOfSamplesInHeader - totalNumberOfCompressedSamples);
+
+    setHeaderComment(&wavHeader, configSettings, timeOfNextRecording + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, externalMicrophone, recordingState, requestedFilterType);
+
+    /* Write the header */
+
+    if (enableLED) AudioMoth_setRedLED(true);
+
+    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_seekInFile(0));
+
+    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(&wavHeader, sizeof(wavHeader_t)));
+
+    /* Close the file */
+
+    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_closeFile());
+
+    AudioMoth_setRedLED(false);
+
+    /* Rename the file if necessary */
+
+    static char newFilename[MAXIMUM_FILE_NAME_LENGTH];
+
+    if (timeOffset > 0) {
+
+        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, configSettings->enableDailyFolders, frequencyTriggerEnabled || amplitudeThresholdEnabled);
+
+        if (enableLED) AudioMoth_setRedLED(true);
+
+        FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_renameFile(filename, newFilename));
+
+        AudioMoth_setRedLED(false);
+
+    }
+
+    /* Return recording state */
+
+    return recordingState;
+
+}
+
+/* Schedule recordings */
+
+static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration, uint32_t sleepDuration) {
+    //this cuts the recording period down to not include any final sleep phase
+
+    uint32_t durationOfCycle1 = recordDuration1 + sleepDuration1 ;
+
+    uint32_t durationOfCycle2 = recordDuration2 + sleepDuration2 ;
+
+    uint32_t durationOfPairedCycles = durationOfCycle1 + durationOfCycle2;
+
+    uint32_t numberOfPairedCycles = *duration / durationOfPairedCycles;
+
+    uint32_t partialCyclePair = *duration % durationOfPairedCycles;
+
+    //uint32_t numberOfCycles1 = numberOfPairedCycles;
+
+    //uint32_t numberOfCycles2 = numberOfPairedCycles;
+
+    if (partialCyclePair == 0) {
+
+        *duration = *duration > sleepDuration1 ? *duration - sleepDuration1 : 0;
+
+    } else if (partialCyclePair >= durationOfCycle1) {
+
+        //numberOfCycles1 = numberOfCycles1 + 1 ;
+
+        *duration = MIN(*duration, numberOfPairedCycles * durationOfPairedCycle + durationOfCycle1 + recordDuration2);
+
+    } else {
+
+        *duration = MIN(*duration, numberOfPairedCycles * durationOfPairedCycle + recordDuration1);
+
+    }
+
+}
+
+static void calculateStartAndDuration(uint32_t currentTime, uint32_t currentSeconds, recordingPeriod_t *period, uint32_t *startTime, uint32_t *duration) {
+
+    *startTime = currentTime - currentSeconds + SECONDS_IN_MINUTE * period->startMinutes;
+
+    *duration = period->endMinutes <= period->startMinutes ? MINUTES_IN_DAY + period->endMinutes - period->startMinutes : period->endMinutes - period->startMinutes;
+
+    *duration *= SECONDS_IN_MINUTE;
+
+}
+
+
+static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecording, uint32_t *durationOfNextRecording, AM_DualGainStep_t *gainOfNextRecording, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod) {
+
+    /* Enforce minumum schedule date */
+
+    currentTime = MAX(currentTime, START_OF_CENTURY);
+
+    /* Check if recording should be limited by earliest recording time */
+
+    if (configSettings->earliestRecordingTime > 0) {
+
+        currentTime = MAX(currentTime, configSettings->earliestRecordingTime);
+
+    }
+
+    /* No suitable recording periods */
+
+    uint32_t activeRecordingPeriods = MIN(configSettings->activeRecordingPeriods, MAX_RECORDING_PERIODS);
+
+    if (activeRecordingPeriods == 0) {
+
+        *timeOfNextRecording = UINT32_MAX;
+
+        if (startOfRecordingPeriod) *startOfRecordingPeriod = UINT32_MAX;
+
+        if (endOfRecordingPeriod) *endOfRecordingPeriod = UINT32_MAX;
+
+        *durationOfNextRecording = 0;
+
+        *gainOfNextRecording = GAIN_STEP_1;
+
+        return;
+
+    }
+
+    /* Calculate the number of seconds of this day */
+
+    time_t rawTime = currentTime;
+
+    struct tm *time = gmtime(&rawTime);
+
+    uint32_t currentSeconds = SECONDS_IN_HOUR * time->tm_hour + SECONDS_IN_MINUTE * time->tm_min + time->tm_sec;
+
+    /* Check the last active period on the previous day */
+
+    recordingPeriod_t *lastPeriod = configSettings->recordingPeriods + configSettings->activeRecordingPeriods - 1;
+
+    uint32_t startTime, duration;
+
+    calculateStartAndDuration(currentTime - SECONDS_IN_DAY, currentSeconds, lastPeriod, &startTime, &duration);
+    //of last period
+
+    if (configSettings->disableSleepRecordCycle == false) {
+
+        adjustRecordingDuration(&duration, configSettings->recordDuration, configSettings->sleepDuration);
+
+    }
+
+    if (currentTime < startTime + duration && duration > 0) goto done;  //*lastperiod is the recording phase we're still in
+
+    /* Check each active recording period on the same day*/
+    // else
+    // if not currently in the *lastperiod recording period, identify next one
+    for (uint32_t i = 0; i < activeRecordingPeriods; i += 1) {
+
+        recordingPeriod_t *currentPeriod = configSettings->recordingPeriods + i;
+
+        calculateStartAndDuration(currentTime, currentSeconds, currentPeriod, &startTime, &duration);
+
+        if (configSettings->disableSleepRecordCycle == false) {
+
+            adjustRecordingDuration(&duration, configSettings->recordDuration, configSettings->sleepDuration);
+
+        }
+
+        if (currentTime < startTime + duration && duration > 0) goto done;  //*pointer is at next or current period
+
+    }
+
+    /* Calculate time until first period tomorrow */
+
+    recordingPeriod_t *firstPeriod = configSettings->recordingPeriods;
+
+    calculateStartAndDuration(currentTime + SECONDS_IN_DAY, currentSeconds, firstPeriod, &startTime, &duration);
+
+    if (configSettings->disableSleepRecordCycle == false) {
+
+        adjustRecordingDuration(&duration, configSettings->recordDuration, configSettings->sleepDuration);
+
+    }
+
+done:  //start and duration of current/next period have been identified at startTime, duration
+
+    //TODO Now would be a good time to toggle gain step to initial !!
+
+    /* Set the time for start and end of the recording period */
+
+    if (startOfRecordingPeriod) *startOfRecordingPeriod = startTime;
+
+    if (endOfRecordingPeriod) *endOfRecordingPeriod = startTime + duration;
+
+    /* Resolve sleep and record cycle */
+
+    if (configSettings->disableSleepRecordCycle) {
+
+        *timeOfNextRecording = startTime;
+
+        *durationOfNextRecording = duration;
+
+    } else {
+
+        if (currentTime <= startTime) {
+
+            /* Recording should start at the start of the recording period */
+
+            *timeOfNextRecording = startTime;
+
+            *durationOfNextRecording = MIN(duration, configSettings->recordDurationGain1);
+
+        } else {
+
+            /* Recording should start immediately or at the start of the next recording cycle */
+
+            uint32_t secondsFromStartOfPeriod = currentTime - startTime;
+
+            //figure out what recording/sleep phase were in by looking at current time
+
+            uint32_t durationOfCycle1 = configSettings->recordDuration1 + configSettings->sleepDurationBetweenGains;
+
+            uint32_t durationOfCyclePair = durationOfCycle1 + configSettings-> recordDuration2 + configSettings->sleepDurationMain;
+
+            uint32_t partialCycle = secondsFromStartOfPeriod % durationOfCyclePair;  //where we are in the recordGain1 - short sleep - recordGain2 - main sleep cycle
+
+            if (partialCycle >= durationOfCycle1) { //we're in second gain half
+
+                partialCycle = partialCycle-durationOfCycle1;
+
+                *timeOfNextRecording = currentTime - partialCycle; //when the current gain2/sleep2 pair started
+
+                *gainOfNextRecording = GAIN_STEP_2;
+
+                if (partialCycle >= configSettings->recordDuration2) { //recording 2 done, in sleep phase of gain2 cycle
+
+                    /* Wait for next cycle to begin */
+
+                    *timeOfNextRecording += durationOfCycle2; //next recording will be gain1 step
+
+                    *gainOfNextRecording = GAIN_STEP_1;
+
+                }  //else "next recording" is still the one we're currently doing
+
+            }
+
+            else { //we're in first gain record/sleep pair
+
+                *timeOfNextRecording = currentTime - partialCycle;
+
+                *gainOfNextRecording = GAIN_STEP_1;
+
+                if (partialCycle >= configSettings->recordDuration1) { //recording 1 done, in short sleep phase of gain1 cycle
+
+                    /* Wait for next cycle to begin */
+
+                    *timeOfNextRecording += durationOfCycle1;
+
+                    *gainOfNextRecording = GAIN_STEP_2;
+
+                }  //else "next recording" is still the one we're currently doing
+            }
+
+            uint32_t remainingDuration = startTime + duration - *timeOfNextRecording; //of period, for next recording
+            // SELECT, record duration 1 or 2
+            *durationOfNextRecording = MIN(configSettings->recordDuration, remainingDuration);
+
+
+        }
+
+    }
+
+    /* Check if recording should be limited by last recording time */ //TODO
+
+    uint32_t latestRecordingTime = configSettings->latestRecordingTime > 0 ? configSettings->latestRecordingTime : MIDPOINT_OF_CENTURY;
+
+    if (*timeOfNextRecording >= latestRecordingTime) {
+
+        *timeOfNextRecording = UINT32_MAX;
+
+        if (startOfRecordingPeriod) *startOfRecordingPeriod = UINT32_MAX;
+
+        if (endOfRecordingPeriod) *endOfRecordingPeriod = UINT32_MAX;
+
+        *durationOfNextRecording = 0;
+
+    } else {
+
+        int64_t excessTime = (int64_t)*timeOfNextRecording + (int64_t)*durationOfNextRecording - (int64_t)latestRecordingTime;
+
+        if (excessTime > 0) *durationOfNextRecording -= excessTime;
+
+        if (endOfRecordingPeriod) *endOfRecordingPeriod = *timeOfNextRecording + *durationOfNextRecording;
+
+    }
+
+}
+
+/* Flash LED according to battery life */
+
+static void flashLedToIndicateBatteryLife(void) {
+
+    uint32_t numberOfFlashes = LOW_BATTERY_LED_FLASHES;
+
+    uint32_t supplyVoltage = AudioMoth_getSupplyVoltage();
+
+    if (configSettings->batteryLevelDisplayType == NIMH_LIPO_BATTERY_VOLTAGE) {
+
+        /* Set number of flashes according to battery voltage */
+
+        AM_extendedBatteryState_t batteryState = AudioMoth_getExtendedBatteryState(supplyVoltage);
+
+        if (batteryState > AM_EXT_BAT_4V3) {
+
+            numberOfFlashes = 1;
+
+        } else if (batteryState > AM_EXT_BAT_3V5) {
+
+            numberOfFlashes = AM_EXT_BAT_4V4 - batteryState;
+
+        }
+
+    } else {
+
+        /* Set number of flashes according to battery state */
+
+        AM_batteryState_t batteryState = AudioMoth_getBatteryState(supplyVoltage);
+
+        if (batteryState > AM_BATTERY_LOW) {
+
+            numberOfFlashes = (batteryState >= AM_BATTERY_4V6) ? 4 : (batteryState >= AM_BATTERY_4V4) ? 3 : (batteryState >= AM_BATTERY_4V0) ? 2 : 1;
+
+        }
+
+    }
+
+    /* Flash LED */
+
+    for (uint32_t i = 0; i < numberOfFlashes; i += 1) {
+
+        FLASH_LED(Red, SHORT_LED_FLASH_DURATION)
+
+        if (numberOfFlashes == LOW_BATTERY_LED_FLASHES) {
+
+            AudioMoth_delay(SHORT_LED_FLASH_DURATION);
+
+        } else {
+
+            AudioMoth_delay(LONG_LED_FLASH_DURATION);
+
+        }
+
+    }
+
+}
+

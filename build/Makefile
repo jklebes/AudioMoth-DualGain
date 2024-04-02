@@ -16,8 +16,8 @@ TOOLPATH = $(TOOLCHAIN_PATH)/$(TOOLCHAIN_VERSION)/bin/
 
 # These are the locations of the source and header files
 
-INC = ../cmsis ../device/inc ../emlib/inc ../emusb/inc ../drivers/inc ../fatfs/inc  ../inc
-SRC = ../device/src ../emlib/src ../emusb/src ../drivers/src ../fatfs/src  ../src
+INC = ../cmsis ../device/inc ../emlib/inc ../emusb/inc ../drivers/inc ../fatfs/inc  ../gps/inc ../inc
+SRC = ../device/src ../emlib/src ../emusb/src ../drivers/src ../fatfs/src  ../gps/src ../src
 
 # Set the name of the output files
 
