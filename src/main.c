@@ -164,6 +164,11 @@
     AudioMoth_powerDownAndWakeMilliseconds(milliseconds); \
 }
 
+#define SAVE_SWITCH_POSITION_AND_SKIP_POWER_DOWN(milliseconds) { \
+    *previousSwitchPosition = switchPosition; \
+    AudioMoth_resetInterrupt(milliseconds); \
+}
+
 
 
 #define SERIAL_NUMBER                           "%08X%08X"
@@ -301,15 +306,15 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDurationBetweenGains = 45,
-    .recordDurationGain1 = 6,
-    .sleepDurationMain = 3,
-    .recordDurationGain2 = 6,
+    .sleepDurationBetweenGains = 0,
+    .recordDurationGain1 = 5,
+    .sleepDurationMain = 50,
+    .recordDurationGain2 = 5,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
-        {.startMinutes = 0, .endMinutes = 1440},
-        {.startMinutes = 0, .endMinutes = 0},
+        {.startMinutes = 1020, .endMinutes = 1140},
+        {.startMinutes = 1430, .endMinutes = 80},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0}
@@ -729,7 +734,6 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 }
 
 /* Backup domain variables */
-// TODO put in AM_DualGainStep_t
 
 static uint32_t *previousSwitchPosition = (uint32_t*)AM_BACKUP_DOMAIN_START_ADDRESS;
 
@@ -737,7 +741,7 @@ static uint32_t *timeOfNextRecording = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRES
 
 static uint32_t *durationOfNextRecording = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 8);
 
-static AM_DualGainStep_t *gainOfNextRecording = (AM_DualGainStep_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 12); //TODO size?  static?
+static AM_DualGainStep_t *gainOfNextRecording = (AM_DualGainStep_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 12); //TODO size?
 
 static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 16);
 
@@ -751,7 +755,9 @@ static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START
 
 static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
 
-static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
+static bool *skippedPowerDown = (bool*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
+
+static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
 
 /* DMA transfer variable */
 
@@ -809,7 +815,7 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
 // TODO name this version
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 0};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 1};
 // TODO name this verion
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "DualGain-Firmware";
 
@@ -869,7 +875,12 @@ int main() {
 
     /* Initialise device */
 
-    AudioMoth_initialise();
+    if (!skippedPowerDown){ //if power down skipped between two adjactent recording, skip power up
+                            // and continue with initialization from last main loop
+
+        AudioMoth_initialise();
+
+    }
 
     /* Check the switch position */
 
@@ -902,6 +913,8 @@ int main() {
         /* Initialise the power down interval flag */
 
         *poweredDownWithShortWaitInterval = false;
+
+        *skippedPowerDown = false; //TODO how to have a value before first initalize??
 
         /* Copy default deployment ID */
 
@@ -1299,9 +1312,22 @@ int main() {
 
             calculateTimeToNextEvent(currentTime, currentMilliseconds, &timeUntilPreparationStart);
 
-            if (timeUntilPreparationStart < DEFAULT_WAIT_INTERVAL) {
+            if (timeUntilPreparationStart < 10) { //very short or negative wait
+
+                *skippedPowerDown = false;  //to not go through power up on next main loop
 
                 *poweredDownWithShortWaitInterval = true;
+
+                SAVE_SWITCH_POSITION_AND_SKIP_POWER_DOWN(SHORT_WAIT_INTERVAL); //set interrupt 100ms in the future,
+                                // even though next recording period is probably already now
+
+            }
+
+
+            else if (timeUntilPreparationStart < DEFAULT_WAIT_INTERVAL) { //<1000ms, proceed normally with power down and up,
+                                                                         // but without LEDS
+
+                *poweredDownWithShortWaitInterval = true; //flag to not flash LEDS
 
                 SAVE_SWITCH_POSITION_AND_POWER_DOWN(SHORT_WAIT_INTERVAL);
 
@@ -1329,7 +1355,8 @@ int main() {
 
     bool startedRealTimeClock = false;
 
-    while (true) {
+    while (true) { //wait, flash LEDS until an interrupt from timer comparison to time in SAVE_SWITCH_POSITION_AND_POWER_DOWN
+                   // triggers main loop again
 
         /* Update the time */
 
