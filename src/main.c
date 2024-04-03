@@ -725,21 +725,19 @@ static uint32_t *timeOfNextRecordingGain2 = (uint32_t*)(AM_BACKUP_DOMAIN_START_A
 
 static uint32_t *durationOfNextRecordingGain2 = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 16);
 
-static AM_gainSetting_t *gainOfNextRecording = (AM_gainSetting_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
+static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
 
-static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 24);
+static uint8_t *deploymentID = (uint8_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 24);
 
-static uint8_t *deploymentID = (uint8_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 28);
+static uint32_t *readyToMakeRecordings = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 28);
 
-static uint32_t *readyToMakeRecordings = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 32);
+static uint32_t *numberOfRecordingErrors = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 32);
 
-static uint32_t *numberOfRecordingErrors = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
+static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
 
-static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
+static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
 
-static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
-
-static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 48);
+static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
 
 /* DMA transfer variable */
 
@@ -1100,9 +1098,6 @@ int main() {
                 *timeOfNextRecordingGain2 = UINT32_MAX;
 
                 *durationOfNextRecordingGain2 = UINT32_MAX;
-
-                *gainOfNextRecording = configSettings->gain1;
-
             }
 
         } // end if *readyToMakeRecordings
@@ -1192,11 +1187,10 @@ int main() {
             if (!fileSystemEnabled) fileSystemEnabled = AudioMoth_enableFileSystem(configSettings->sampleRateDivider == 1 ? AM_SD_CARD_HIGH_SPEED : AM_SD_CARD_NORMAL_SPEED);
 
             if (fileSystemEnabled)  {
-                // TODO main event !
-                *gainOfNextRecording = configSettings->gain1;
-                recordingState = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, *gainOfNextRecording, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
-                *gainOfNextRecording = configSettings->gain2;
-                recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, *gainOfNextRecording,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                //*gainOfNextRecording\ = configSettings->gain1;
+                recordingState = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, configSettings->gain1, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                //*gainOfNextRecording = configSettings->gain2;
+                recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
 
             } else {
 
