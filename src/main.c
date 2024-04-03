@@ -725,7 +725,7 @@ static uint32_t *timeOfNextRecordingGain2 = (uint32_t*)(AM_BACKUP_DOMAIN_START_A
 
 static uint32_t *durationOfNextRecordingGain2 = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 16);
 
-static AM_DualGainStep_t *gainOfNextRecording = (AM_DualGainStep_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
+static AM_gainSetting_t *gainOfNextRecording = (AM_gainSetting_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
 
 static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 24);
 
@@ -807,7 +807,7 @@ static void flashLedToIndicateBatteryLife(void);
 
 static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordingGain1, uint32_t *durationOfNextRecordingGain1,  uint32_t *timeOfNextRecordingGain2, uint32_t *durationOfNextRecordingGain2, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod);
 
-static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint32_t recordDurationGain1, uint32_t timeOfNextRecordingGain2, uint32_t recordDurationGain2, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds);
+static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint32_t recordDurationGain1, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds);
 
 /* Functions of copy to and from the backup domain */
 
@@ -1082,7 +1082,7 @@ int main() {
 
                 //sets next times, durations
                 uint32_t timeOfNextEvent = UINT32_MAX;
-                scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2+1, durationOfNextRecordingGain2, &timeOfNextEvent, NULL);
+                scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2, &timeOfNextEvent, NULL);
 
             }
 
@@ -1193,7 +1193,10 @@ int main() {
 
             if (fileSystemEnabled)  {
                 // TODO main event !
-                recordingState = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, *timeOfNextRecordingGain2, *durationOfNextRecordingGain2, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                *gainOfNextRecording = configSettings->gain1;
+                recordingState = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, *gainOfNextRecording, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                *gainOfNextRecording = configSettings->gain2;
+                recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, *gainOfNextRecording,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
 
             } else {
 
@@ -1707,7 +1710,7 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
 /* Save recording to SD card */
 
-static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint32_t recordDurationGain1, uint32_t timeOfNextRecordingGain2, uint32_t recordDurationGain2, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds) {
+static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds) {
 
 
     /* Calculate effective sample rate */
@@ -1756,7 +1759,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint
 
     AM_gainRange_t gainRange = configSettings->enableLowGainRange ? AM_LOW_GAIN_RANGE : AM_NORMAL_GAIN_RANGE;
 
-    bool externalMicrophone = AudioMoth_enableMicrophone(gainRange, configSettings->gain1, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
+    bool externalMicrophone = AudioMoth_enableMicrophone(gainRange, gainOfNextRecording, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
 
     AudioMoth_initialiseDirectMemoryAccess(primaryBuffer, secondaryBuffer, numberOfRawSamplesInDMATransfer);
 
@@ -1770,7 +1773,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint
 
     static char foldername[MAXIMUM_FILE_NAME_LENGTH];
 // TODO
-    generateFolderAndFilename(foldername, filename, timeOfNextRecordingGain1, recordDurationGain1, configSettings->enableDailyFolders);
+    generateFolderAndFilename(foldername, filename, timeOfNextRecording, recordDuration, configSettings->enableDailyFolders);
 
     if (configSettings->enableDailyFolders) {
 
@@ -1796,13 +1799,13 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint
 
     /* Calculate time until the recording should start */
 
-    int64_t millisecondsUntilRecordingShouldStart = (int64_t)timeOfNextRecordingGain1 * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenTime * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenMilliseconds - (int64_t)sampleRateTimeOffset;
+    int64_t millisecondsUntilRecordingShouldStart = (int64_t)timeOfNextRecording * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenTime * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenMilliseconds - (int64_t)sampleRateTimeOffset;
 
     /* Calculate the actual recording start time if the intended start has been missed */
 
     uint32_t timeOffset = millisecondsUntilRecordingShouldStart < 0 ? 1 - millisecondsUntilRecordingShouldStart / MILLISECONDS_IN_SECOND : 0;
 
-    recordDurationGain1 = timeOffset >= recordDurationGain1 ? 0 : recordDurationGain1 - timeOffset;
+    recordDuration = timeOffset >= recordDuration ? 0 : recordDuration - timeOffset;
 
     millisecondsUntilRecordingShouldStart += timeOffset * MILLISECONDS_IN_SECOND;
 
@@ -1822,9 +1825,9 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint
 
     uint32_t maximumNumberOfSeconds = (MAXIMUM_WAV_FILE_SIZE - sizeof(wavHeader_t)) / NUMBER_OF_BYTES_IN_SAMPLE / effectiveSampleRate;
 
-    bool fileSizeLimited = (recordDurationGain1 > maximumNumberOfSeconds);
+    bool fileSizeLimited = (recordDuration > maximumNumberOfSeconds);
 
-    uint32_t numberOfSamples = effectiveSampleRate * (fileSizeLimited ? maximumNumberOfSeconds : recordDurationGain1);
+    uint32_t numberOfSamples = effectiveSampleRate * (fileSizeLimited ? maximumNumberOfSeconds : recordDuration);
 
     /* Initialise main loop variables */
 
@@ -1980,7 +1983,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint
 
     setHeaderDetails(&wavHeader, effectiveSampleRate, samplesWritten - numberOfSamplesInHeader - totalNumberOfCompressedSamples);
 
-    setHeaderComment(&wavHeader, configSettings, timeOfNextRecordingGain1 + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, externalMicrophone, recordingState);
+    setHeaderComment(&wavHeader, configSettings, timeOfNextRecording + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, externalMicrophone, recordingState);
 
     /* Write the header */
 
@@ -2002,283 +2005,11 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint
 
     if (timeOffset > 0) {
         //TODO
-        generateFolderAndFilename(foldername, newFilename, timeOfNextRecordingGain1 + timeOffset, recordDurationGain1, configSettings->enableDailyFolders);
+        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, recordDuration, configSettings->enableDailyFolders);
 
         if (enableLED) AudioMoth_setRedLED(true);
 
         FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_renameFile(filename, newFilename));
-
-        AudioMoth_setRedLED(false);
-
-    }
-
-    /*reinitialize for recording 2*/
-
-    writeBuffer = 0;
-
-    writeBufferIndex = 0;
-
-    buffers[0] = (int16_t*)AM_EXTERNAL_SRAM_START_ADDRESS;
-
-    for (uint32_t i = 1; i < NUMBER_OF_BUFFERS; i += 1) {
-        buffers[i] = buffers[i - 1] + NUMBER_OF_SAMPLES_IN_BUFFER;
-    }
-
-    /* Initialise microphone for recording */
-
-    AudioMoth_enableExternalSRAM();
-
-    externalMicrophone = AudioMoth_enableMicrophone(gainRange, configSettings->gain2, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
-
-    AudioMoth_initialiseDirectMemoryAccess(primaryBuffer, secondaryBuffer, numberOfRawSamplesInDMATransfer);
-
-    /* Show LED for SD card activity */
-
-    if (enableLED) AudioMoth_setRedLED(true);
-
-    /* Open a file with the current local time as the name */
-
-    static char filename2[MAXIMUM_FILE_NAME_LENGTH];
-
-    static char foldername2[MAXIMUM_FILE_NAME_LENGTH];
-
-    generateFolderAndFilename(foldername2, filename2, timeOfNextRecordingGain2, recordDurationGain2, configSettings->enableDailyFolders);
-
-    if (configSettings->enableDailyFolders) {
-
-        bool directoryExists = AudioMoth_doesDirectoryExist(foldername2);
-
-        if (directoryExists == false) FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_makeDirectory(foldername2));
-
-    }
-
-    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_openFile(filename2));
-
-    AudioMoth_setRedLED(false);
-
-    /* Measure the time difference from the start time */
-
-    AudioMoth_getTime(fileOpenTime, fileOpenMilliseconds);
-
-    /* Calculate time correction for sample rate due to file header */
-
-    numberOfSamplesInHeader = sizeof(wavHeader_t) / NUMBER_OF_BYTES_IN_SAMPLE;
-
-    sampleRateTimeOffset = ROUNDED_DIV(numberOfSamplesInHeader * MILLISECONDS_IN_SECOND, effectiveSampleRate);
-
-    /* Calculate time until the recording should start */
-
-    millisecondsUntilRecordingShouldStart = (int64_t)timeOfNextRecordingGain2 * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenTime * MILLISECONDS_IN_SECOND - (int64_t)*fileOpenMilliseconds - (int64_t)sampleRateTimeOffset;
-
-    /* Calculate the actual recording start time if the intended start has been missed */
-
-    timeOffset = millisecondsUntilRecordingShouldStart < 0 ? 1 - millisecondsUntilRecordingShouldStart / MILLISECONDS_IN_SECOND : 0;
-
-    recordDurationGain2 = timeOffset >= recordDurationGain2 ? 0 : recordDurationGain2 - timeOffset;
-
-    millisecondsUntilRecordingShouldStart += timeOffset * MILLISECONDS_IN_SECOND;
-
-    /* Calculate the period to wait before starting the DMA transfers */
-
-    numberOfRawSamplesPerMillisecond = configSettings->sampleRate / MILLISECONDS_IN_SECOND;
-
-    numberOfRawSamplesToWait = millisecondsUntilRecordingShouldStart * numberOfRawSamplesPerMillisecond;
-
-    numberOfDMATransfersToWait = numberOfRawSamplesToWait / numberOfRawSamplesInDMATransfer;
-
-    remainingNumberOfRawSamples = numberOfRawSamplesToWait % numberOfRawSamplesInDMATransfer;
-
-    remainingMillisecondsToWait = ROUNDED_DIV(remainingNumberOfRawSamples, numberOfRawSamplesPerMillisecond);
-
-    /* Calculate updated recording parameters */
-
-    maximumNumberOfSeconds = (MAXIMUM_WAV_FILE_SIZE - sizeof(wavHeader_t)) / NUMBER_OF_BYTES_IN_SAMPLE / effectiveSampleRate;
-
-    fileSizeLimited = (recordDurationGain2 > maximumNumberOfSeconds);
-
-    numberOfSamples = effectiveSampleRate * (fileSizeLimited ? maximumNumberOfSeconds : recordDurationGain2);
-
-    /* ReInitialise main loop variables */
-
-    readBuffer = 0;
-
-    samplesWritten = 0;
-
-    buffersProcessed = 0;
-
-    numberOfCompressedBuffers = 0;
-
-    totalNumberOfCompressedSamples = 0;
-
-    /* Start processing DMA transfers */
-
-    numberOfDMATransfers = 0;
-
-    AudioMoth_delay(remainingMillisecondsToWait);
-
-    AudioMoth_startMicrophoneSamples(configSettings->sampleRate);
-
-    /* Main recording loop */
-
-    while (samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged  && !supplyVoltageLow) {
-
-        while (readBuffer != writeBuffer && samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !supplyVoltageLow) {
-
-            /* Determine the appropriate number of bytes to the SD card */
-
-            uint32_t numberOfSamplesToWrite = MIN(numberOfSamples + numberOfSamplesInHeader - samplesWritten, NUMBER_OF_SAMPLES_IN_BUFFER);
-
-            /* Check if this buffer should actually be written to the SD card */
-
-            bool writeIndicated =  writeIndicator[readBuffer];
-
-            /* Ensure the minimum number of buffers will be written */
-
-            bool shouldWriteThisSector = writeIndicated ;
-
-            /* Compress the buffer or write the buffer to SD card */
-
-            if (shouldWriteThisSector == false && buffersProcessed > 0 && numberOfSamplesToWrite == NUMBER_OF_SAMPLES_IN_BUFFER) {
-
-                numberOfCompressedBuffers += NUMBER_OF_BYTES_IN_SAMPLE * NUMBER_OF_SAMPLES_IN_BUFFER / COMPRESSION_BUFFER_SIZE_IN_BYTES;
-
-            } else {
-
-                /* Light LED during SD card write if appropriate */
-
-                if (enableLED) AudioMoth_setRedLED(true);
-
-                /* Encode and write compression buffer */
-
-                if (numberOfCompressedBuffers > 0) {
-
-                    encodeCompressionBuffer(numberOfCompressedBuffers);
-
-                    totalNumberOfCompressedSamples += (numberOfCompressedBuffers - 1) * COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE;
-
-                    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(compressionBuffer, COMPRESSION_BUFFER_SIZE_IN_BYTES));
-
-                    numberOfCompressedBuffers = 0;
-
-                }
-
-                /* Either write the buffer or write a blank buffer */
-
-                if (shouldWriteThisSector) {
-
-                    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(buffers[readBuffer], NUMBER_OF_BYTES_IN_SAMPLE * numberOfSamplesToWrite));
-
-                } else {
-
-                    clearCompressionBuffer();
-
-                    uint32_t numberOfBlankSamplesToWrite = numberOfSamplesToWrite;
-
-                    while (numberOfBlankSamplesToWrite > 0) {
-
-                        uint32_t numberOfSamples = MIN(numberOfBlankSamplesToWrite, COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE);
-
-                        FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(compressionBuffer, NUMBER_OF_BYTES_IN_SAMPLE * numberOfSamples));
-
-                        numberOfBlankSamplesToWrite -= numberOfSamples;
-
-                    }
-
-                }
-
-                /* Clear LED */
-
-                AudioMoth_setRedLED(false);
-
-            }
-
-            /* Increment buffer counters */
-
-            readBuffer = (readBuffer + 1) & (NUMBER_OF_BUFFERS - 1);
-
-            samplesWritten += numberOfSamplesToWrite;
-
-            buffersProcessed += 1;
-
-        }
-
-        /* Check the voltage level */
-
-        if (configSettings->enableLowVoltageCutoff && AudioMoth_isSupplyAboveThreshold() == false) {
-
-            supplyVoltageLow = true;
-
-        }
-
-        /* Sleep until next DMA transfer is complete */
-
-        AudioMoth_sleep();
-
-    }
-
-    /* Write the compression buffer files at the end */
-
-    if (samplesWritten < numberOfSamples + numberOfSamplesInHeader && numberOfCompressedBuffers > 0) {
-
-        /* Light LED during SD card write if appropriate */
-
-        if (enableLED) AudioMoth_setRedLED(true);
-
-        /* Encode and write compression buffer */
-
-        encodeCompressionBuffer(numberOfCompressedBuffers);
-
-        totalNumberOfCompressedSamples += (numberOfCompressedBuffers - 1) * COMPRESSION_BUFFER_SIZE_IN_BYTES / NUMBER_OF_BYTES_IN_SAMPLE;
-
-        FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(compressionBuffer, COMPRESSION_BUFFER_SIZE_IN_BYTES));
-
-        /* Clear LED */
-
-        AudioMoth_setRedLED(false);
-
-    }
-
-    /* Determine recording state */ //TODO
-
-    recordingState = microphoneChanged ? MICROPHONE_CHANGED :
-                                         switchPositionChanged ? SWITCH_CHANGED :
-                                         supplyVoltageLow ? SUPPLY_VOLTAGE_LOW :
-                                         fileSizeLimited ? FILE_SIZE_LIMITED :
-                                         RECORDING_OKAY;
-
-    /* Initialise the WAV header */
-
-    samplesWritten = MAX(numberOfSamplesInHeader, samplesWritten);
-
-    setHeaderDetails(&wavHeader, effectiveSampleRate, samplesWritten - numberOfSamplesInHeader - totalNumberOfCompressedSamples);
-
-    setHeaderComment(&wavHeader, configSettings, timeOfNextRecordingGain2 + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, externalMicrophone, recordingState);
-
-    /* Write the header */
-
-    if (enableLED) AudioMoth_setRedLED(true);
-
-    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_seekInFile(0));
-
-    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_writeToFile(&wavHeader, sizeof(wavHeader_t)));
-
-    /* Close the file */
-
-    FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_closeFile());
-
-    AudioMoth_setRedLED(false);
-
-    /* Rename the file if necessary */
-
-    static char newFilename2[MAXIMUM_FILE_NAME_LENGTH];
-
-    if (timeOffset > 0) {
-
-        generateFolderAndFilename(foldername2, newFilename2, timeOfNextRecordingGain2 + timeOffset, recordDurationGain2, configSettings->enableDailyFolders);
-
-        if (enableLED) AudioMoth_setRedLED(true);
-
-        FLASH_LED_AND_RETURN_ON_ERROR(AudioMoth_renameFile(filename2, newFilename2));
 
         AudioMoth_setRedLED(false);
 
