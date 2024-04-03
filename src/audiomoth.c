@@ -1148,6 +1148,26 @@ void AudioMoth_powerDown() {
 
 }
 
+void AudioMoth_resetInterrupt(uint32_t milliseconds) {
+
+
+    uint32_t counterValueToMatch = BURTC_CounterGet();
+
+    uint32_t period = ROUNDED_DIV(milliseconds * AM_BURTC_TICKS_PER_SECOND, MILLISECONDS_IN_SECOND);
+
+    counterValueToMatch += MAX(AM_MINIMUM_POWER_DOWN_TIME, period);
+
+    BURTC_CompareSet(0, counterValueToMatch);
+
+    /* Enable compare interrupt flag */
+
+    BURTC_IntEnable(BURTC_IF_COMP0);
+
+    while (1) { };
+
+}
+
+
 void AudioMoth_powerDownAndWakeMilliseconds(uint32_t milliseconds) {
 
     /* Put GPIO pins in power down state */
