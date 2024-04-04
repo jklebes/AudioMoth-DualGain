@@ -164,10 +164,6 @@
     AudioMoth_powerDownAndWakeMilliseconds(milliseconds); \
 }
 
-#define SAVE_SWITCH_POSITION_AND_SKIP_POWER_DOWN(milliseconds) { \
-    *previousSwitchPosition = switchPosition; \
-    AudioMoth_resetInterrupt(milliseconds); \
-}
 
 
 
@@ -755,8 +751,6 @@ static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START
 
 static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
 
-static bool *skippedPowerDown = (bool*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
-
 static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
 
 /* DMA transfer variable */
@@ -875,12 +869,10 @@ int main() {
 
     /* Initialise device */
 
-    if (!skippedPowerDown){ //if power down skipped between two adjactent recording, skip power up
-                            // and continue with initialization from last main loop
 
-        AudioMoth_initialise();
+    AudioMoth_initialise();
 
-    }
+
 
     /* Check the switch position */
 
@@ -913,8 +905,6 @@ int main() {
         /* Initialise the power down interval flag */
 
         *poweredDownWithShortWaitInterval = false;
-
-        *skippedPowerDown = false; //TODO how to have a value before first initalize??
 
         /* Copy default deployment ID */
 
@@ -1312,19 +1302,8 @@ int main() {
 
             calculateTimeToNextEvent(currentTime, currentMilliseconds, &timeUntilPreparationStart);
 
-            if (timeUntilPreparationStart < 10) { //very short or negative wait
 
-                *skippedPowerDown = false;  //to not go through power up on next main loop
-
-                *poweredDownWithShortWaitInterval = true;
-
-                SAVE_SWITCH_POSITION_AND_SKIP_POWER_DOWN(SHORT_WAIT_INTERVAL); //set interrupt 100ms in the future,
-                                // even though next recording period is probably already now
-
-            }
-
-
-            else if (timeUntilPreparationStart < DEFAULT_WAIT_INTERVAL) { //<1000ms, proceed normally with power down and up,
+            if (timeUntilPreparationStart < DEFAULT_WAIT_INTERVAL) { //<1000ms, proceed normally with power down and up,
                                                                          // but without LEDS
 
                 *poweredDownWithShortWaitInterval = true; //flag to not flash LEDS
