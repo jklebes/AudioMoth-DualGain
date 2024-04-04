@@ -530,7 +530,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
     }
 
     length += sprintf(configBuffer + length, "Sleep betweenGains (s)            : ");
-    
+
     if (configSettings->disableSleepRecordCycle) {
 
         length += sprintf(configBuffer + length, "-");
@@ -839,7 +839,7 @@ int main() {
 
     if (AudioMoth_isInitialPowerUp()) {
 
-        /* Initialise recording schedule variables */ 
+        /* Initialise recording schedule variables */
 
         *timeOfNextRecordingGain1 = 0;
 
@@ -1168,7 +1168,7 @@ int main() {
                 temperature = AudioMoth_getTemperature();
                 AudioMoth_disableTemperature();
                 AM_recordingState_t recordingState2 = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
-                
+
                 // combine recordingState by choosing greatest in enum, i.e. worst error message
                 recordingState = MAX(recordingState1, recordingState2);
 
@@ -1665,7 +1665,7 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
     sprintf(foldername, "%04d%02d%02d", YEAR_OFFSET + time.tm_year, MONTH_OFFSET + time.tm_mon, time.tm_mday);
 
     uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
-    
+
     static char *gainSettings[5] = {"Low", "Lowmedium", "Medium", "Mediumhigh", "High"};
 
     length += sprintf(filename + length, "%s_%02d%02d%02d_gain%s", foldername, time.tm_hour, time.tm_min, time.tm_sec, gainSettings[gain]);
@@ -1741,7 +1741,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     static char filename[MAXIMUM_FILE_NAME_LENGTH];
 
     static char foldername[MAXIMUM_FILE_NAME_LENGTH];
-    
+
     generateFolderAndFilename(foldername, filename, timeOfNextRecording, gainOfNextRecording, configSettings->enableDailyFolders);
 
     if (configSettings->enableDailyFolders) {
@@ -1992,10 +1992,10 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
 /* Schedule recordings */
 
-static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1, uint32_t recordDuration2, uint32_t sleepDuration) {
+static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1, uint32_t recordDuration2, uint32_t sleepDuration, uint32_t sleepDurationBetweenGains) {
     //this cuts the recording period down to not include any final sleep phase
 
-    uint32_t durationOfCycle = recordDuration1 + recordDuration2 + sleepDuration;
+    uint32_t durationOfCycle = recordDuration1 + recordDuration2 + sleepDuration + sleepDurationBetweenGains;
 
     uint32_t numberOfCycles = *duration / durationOfCycle;
 
@@ -2007,7 +2007,7 @@ static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1
 
     } else {
 
-        *duration = MIN(*duration, numberOfCycles * durationOfCycle + recordDuration1 + recordDuration2);
+        *duration = MIN(*duration, numberOfCycles * durationOfCycle + recordDuration1 + sleepDurationBetweenGains + recordDuration2);
 
     }
 
@@ -2079,7 +2079,7 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
     if (configSettings->disableSleepRecordCycle == false) {
 
-        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration);
+        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains);
 
     }
 
@@ -2096,7 +2096,7 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
         if (configSettings->disableSleepRecordCycle == false) {
 
-            adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration);
+            adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains);
 
         }
 
@@ -2112,7 +2112,7 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
     if (configSettings->disableSleepRecordCycle == false) {
 
-        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration);
+        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains);
 
     }
 
@@ -2210,7 +2210,7 @@ done:  //start and duration of current/next period have been identified at start
 
     }
 
-    /* Check if recording should be limited by last recording time */ 
+    /* Check if recording should be limited by last recording time */
 
     uint32_t latestRecordingTime = configSettings->latestRecordingTime > 0 ? configSettings->latestRecordingTime : MIDPOINT_OF_CENTURY;
 
