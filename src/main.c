@@ -87,7 +87,13 @@
 
 /* USB configuration constant */
 
-#define MAX_RECORDING_PERIODS         5
+#define MAX_RECORDING_PERIODS                   5
+
+
+/* DC filter constants */
+
+#define LOW_DC_BLOCKING_FREQ                    8
+#define DEFAULT_DC_BLOCKING_FREQ                48
 
 /* Supply voltage constant */
 
@@ -185,6 +191,10 @@
 /* Recording state enumeration */
 
 typedef enum {RECORDING_OKAY, FILE_SIZE_LIMITED, SUPPLY_VOLTAGE_LOW, SWITCH_CHANGED, MICROPHONE_CHANGED, SDCARD_WRITE_ERROR} AM_recordingState_t;
+
+/* Filter type enumeration */
+
+typedef enum {NO_FILTER, LOW_PASS_FILTER, BAND_PASS_FILTER, HIGH_PASS_FILTER} AM_filterType_t;
 
 /* Battery level display type */
 
@@ -714,6 +724,10 @@ static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START
 static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
 
 static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
+
+/* Filter variables */
+
+static AM_filterType_t requestedFilterType;
 
 /* DMA transfer variable */
 
@@ -1666,7 +1680,7 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
     uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
 
-    static char *gainSettings[5] = {"Low", "Lowmedium", "Medium", "Mediumhigh", "High"};
+    static char *gainSettings[5] = {"Low", "LowMedium", "Medium", "MediumHigh", "High"};
 
     length += sprintf(filename + length, "%s_%02d%02d%02d_gain%s", foldername, time.tm_hour, time.tm_min, time.tm_sec, gainSettings[gain]);
 
@@ -1681,10 +1695,29 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
 static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds) {
 
+    /* Initialise buffers */
+
+    writeBuffer = 0;
+
+    writeBufferIndex = 0;
+
+    buffers[0] = (int16_t*)AM_EXTERNAL_SRAM_START_ADDRESS;
+
+    for (uint32_t i = 1; i < NUMBER_OF_BUFFERS; i += 1) {
+        buffers[i] = buffers[i - 1] + NUMBER_OF_SAMPLES_IN_BUFFER;
+    }
 
     /* Calculate effective sample rate */
 
     uint32_t effectiveSampleRate = configSettings->sampleRate / configSettings->sampleRateDivider;
+
+    /* Set up the digital filter */
+
+    uint32_t blockingFilterFrequency = configSettings->disable48HzDCBlockingFilter ? LOW_DC_BLOCKING_FREQ : DEFAULT_DC_BLOCKING_FREQ;
+
+    requestedFilterType = NO_FILTER;
+
+    DigitalFilter_designHighPassFilter(effectiveSampleRate, blockingFilterFrequency);
 
     /* Calculate the sample multiplier */
 
@@ -1704,19 +1737,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     numberOfRawSamplesInDMATransfer *= configSettings->sampleRateDivider;
 
-    /* Initialise buffers */
-
-    writeBuffer = 0;
-
-    writeBufferIndex = 0;
-
-    buffers[0] = (int16_t*)AM_EXTERNAL_SRAM_START_ADDRESS;
-
-    for (uint32_t i = 1; i < NUMBER_OF_BUFFERS; i += 1) {
-        buffers[i] = buffers[i - 1] + NUMBER_OF_SAMPLES_IN_BUFFER;
-    }
-
-    /* Initialise termination conditions */
+   /* Initialise termination conditions */
 
     microphoneChanged = false;
 
@@ -1810,6 +1831,10 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     uint32_t totalNumberOfCompressedSamples = 0;
 
+    uint32_t numberOfTriggeredBuffersWritten = 0;
+
+    bool triggerHasOccurred = false;
+
     /* Start processing DMA transfers */
 
     numberOfDMATransfers = 0;
@@ -1820,21 +1845,25 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     /* Main recording loop */
 
-    while (samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged  && !supplyVoltageLow) {
+    while (samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !supplyVoltageLow) {
 
-        while (readBuffer != writeBuffer && samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !supplyVoltageLow) {
+        while (readBuffer != writeBuffer && samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged  && !supplyVoltageLow) {
 
             /* Determine the appropriate number of bytes to the SD card */
 
             uint32_t numberOfSamplesToWrite = MIN(numberOfSamples + numberOfSamplesInHeader - samplesWritten, NUMBER_OF_SAMPLES_IN_BUFFER);
 
-            /* Check if this buffer should actually be written to the SD card */
+           /* Check if this buffer should actually be written to the SD card */
 
-            bool writeIndicated =  writeIndicator[readBuffer];
+            bool writeIndicated = writeIndicator[readBuffer];
 
             /* Ensure the minimum number of buffers will be written */
 
-            bool shouldWriteThisSector = writeIndicated ;
+            triggerHasOccurred |= writeIndicated;
+
+            numberOfTriggeredBuffersWritten = writeIndicated ? 0 : numberOfTriggeredBuffersWritten + 1;
+
+            bool shouldWriteThisSector = writeIndicated;
 
             /* Compress the buffer or write the buffer to SD card */
 
@@ -1973,8 +2002,8 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     static char newFilename[MAXIMUM_FILE_NAME_LENGTH];
 
     if (timeOffset > 0) {
-        //TODO
-        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, gainRange, configSettings->enableDailyFolders);
+
+        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, gainOfNextRecording, configSettings->enableDailyFolders);
 
         if (enableLED) AudioMoth_setRedLED(true);
 
