@@ -523,11 +523,11 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     static char *gainSettings[5] = {"Low", "Low-Medium", "Medium", "Medium-High", "High"};
 
-    length += sprintf(configBuffer + length, "Gain1                            : %s\r\n\r\n", gainSettings[configSettings->gain1]);
+    length += sprintf(configBuffer + length, "Gain1                           : %s\r\n\r\n", gainSettings[configSettings->gain1]);
 
-    length += sprintf(configBuffer + length, "Gain2                            : %s\r\n\r\n", gainSettings[configSettings->gain2]);
+    length += sprintf(configBuffer + length, "Gain2                           : %s\r\n\r\n", gainSettings[configSettings->gain2]);
 
-    length += sprintf(configBuffer + length, "Sleep duration (s)            : ");
+    length += sprintf(configBuffer + length, "Sleep duration (s)              : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -539,7 +539,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     }
 
-    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)            : ");
+    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)          : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -550,7 +550,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
         length += sprintf(configBuffer + length, "%u", configSettings->sleepDurationBetweenGains);
     }
 
-    length += sprintf(configBuffer + length, "\r\nRecording duration gain 1 (s)          : ");
+    length += sprintf(configBuffer + length, "\r\nRecording duration gain 1 (s)   : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -562,7 +562,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     }
 
-    length += sprintf(configBuffer + length, "\r\nRecording duration gain 2 (s)          : ");
+    length += sprintf(configBuffer + length, "\r\nRecording duration gain 2 (s)   : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
