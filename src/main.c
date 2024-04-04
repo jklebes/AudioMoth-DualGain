@@ -298,7 +298,7 @@ static const configSettings_t defaultConfigSettings = {
     .sampleRate = 384000,
     .sampleRateDivider = 8,
     .recordDurationGain1 = 5,
-    .sleepDuration = 50,
+    .sleepDuration = 48,
     .sleepDurationBetweenGains = 2,
     .recordDurationGain2 = 5,
     .enableLED = 1,
@@ -529,7 +529,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     }
 
-    length += sprintf(configBuffer + length, "Sleep betweenGains (s)            : ");
+    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)            : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -773,7 +773,7 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 1};
 
-static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "DualGain-Firmware";
+static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-DualGain";
 
 /* Function prototypes */
 
