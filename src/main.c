@@ -83,7 +83,12 @@
 #define PCM_FORMAT                              1
 #define RIFF_ID_LENGTH                          4
 #define LENGTH_OF_ARTIST                        32
-#define LENGTH_OF_COMMENT                       384  // TODO
+#define LENGTH_OF_COMMENT                       384
+
+/* DC filter constants */
+
+#define LOW_DC_BLOCKING_FREQ                    8
+#define DEFAULT_DC_BLOCKING_FREQ                48
 
 /* USB configuration constant */
 
@@ -186,6 +191,10 @@
 /* Recording state enumeration */
 
 typedef enum {RECORDING_OKAY, FILE_SIZE_LIMITED, SUPPLY_VOLTAGE_LOW, SWITCH_CHANGED, MICROPHONE_CHANGED, SDCARD_WRITE_ERROR} AM_recordingState_t;
+
+/* Filter type enumeration */
+
+typedef enum {NO_FILTER, LOW_PASS_FILTER, BAND_PASS_FILTER, HIGH_PASS_FILTER} AM_filterType_t;
 
 /* Gain 1 or 2 step in recording cycle - just an alias of a 0,1 flag*/
 
@@ -724,6 +733,10 @@ static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START
 static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
 
 static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
+
+/* Filter variables */
+
+static AM_filterType_t requestedFilterType;
 
 /* DMA transfer variable */
 
@@ -1657,7 +1670,7 @@ static void encodeCompressionBuffer(uint32_t numberOfCompressedBuffers) {
 
 /* Generate foldername and filename from time */ //TODO
 
-static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, bool prefixFoldername) {
+static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, AM_gainRange_t gain, bool prefixFoldername) {
 
     struct tm time;
 
@@ -1669,7 +1682,9 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
     uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
 
-    length += sprintf(filename + length, "%s_%02d%02d%02d", foldername, time.tm_hour, time.tm_min, time.tm_sec);
+    static char *gainSettings[5] = {"Low", "LowMedium", "Medium", "MediumHigh", "High"};
+
+    length += sprintf(filename + length, "%s_%02d%02d%02d_%s", foldername, time.tm_hour, time.tm_min, time.tm_sec, gainSettings[gain]);
 
     char *extension = ".WAV";
 
@@ -1698,6 +1713,14 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     uint32_t effectiveSampleRate = configSettings->sampleRate / configSettings->sampleRateDivider;
 
+    /* Set up the digital filter */
+
+    uint32_t blockingFilterFrequency = configSettings->disable48HzDCBlockingFilter ? LOW_DC_BLOCKING_FREQ : DEFAULT_DC_BLOCKING_FREQ;
+
+    requestedFilterType = NO_FILTER;
+
+    DigitalFilter_designHighPassFilter(effectiveSampleRate, blockingFilterFrequency);
+
     /* Calculate the sample multiplier */
 
     float sampleMultiplier = 16.0f / (float)(configSettings->oversampleRate * configSettings->sampleRateDivider);
@@ -1716,8 +1739,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     numberOfRawSamplesInDMATransfer *= configSettings->sampleRateDivider;
 
-
-    /* Initialise termination conditions */
+   /* Initialise termination conditions */
 
     microphoneChanged = false;
 
@@ -1726,12 +1748,10 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     /* Initialise microphone for recording */
 
     AudioMoth_enableExternalSRAM();
-// TODO ??
+
     AM_gainRange_t gainRange = configSettings->enableLowGainRange ? AM_LOW_GAIN_RANGE : AM_NORMAL_GAIN_RANGE;
 
-    AM_gainSetting_t currentGain =  (gainOfNextRecording==GAIN_STEP_1) ? configSettings->gain1 :  configSettings->gain2;
-
-    bool externalMicrophone = AudioMoth_enableMicrophone(gainRange, currentGain, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
+    bool externalMicrophone = AudioMoth_enableMicrophone(gainRange, gainOfNextRecording, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
 
     AudioMoth_initialiseDirectMemoryAccess(primaryBuffer, secondaryBuffer, numberOfRawSamplesInDMATransfer);
 
@@ -1744,8 +1764,8 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     static char filename[MAXIMUM_FILE_NAME_LENGTH];
 
     static char foldername[MAXIMUM_FILE_NAME_LENGTH];
-// TODO
-    generateFolderAndFilename(foldername, filename, timeOfNextRecording, configSettings->enableDailyFolders);
+
+    generateFolderAndFilename(foldername, filename, timeOfNextRecording, gainOfNextRecording, configSettings->enableDailyFolders);
 
     if (configSettings->enableDailyFolders) {
 
@@ -1813,6 +1833,10 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     uint32_t totalNumberOfCompressedSamples = 0;
 
+    uint32_t numberOfTriggeredBuffersWritten = 0;
+
+    bool triggerHasOccurred = false;
+
     /* Start processing DMA transfers */
 
     numberOfDMATransfers = 0;
@@ -1823,21 +1847,25 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     /* Main recording loop */
 
-    while (samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged  && !supplyVoltageLow) {
+    while (samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !supplyVoltageLow) {
 
-        while (readBuffer != writeBuffer && samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged && !supplyVoltageLow) {
+        while (readBuffer != writeBuffer && samplesWritten < numberOfSamples + numberOfSamplesInHeader && !microphoneChanged && !switchPositionChanged  && !supplyVoltageLow) {
 
             /* Determine the appropriate number of bytes to the SD card */
 
             uint32_t numberOfSamplesToWrite = MIN(numberOfSamples + numberOfSamplesInHeader - samplesWritten, NUMBER_OF_SAMPLES_IN_BUFFER);
 
-            /* Check if this buffer should actually be written to the SD card */
+           /* Check if this buffer should actually be written to the SD card */
 
-            bool writeIndicated =  writeIndicator[readBuffer];
+            bool writeIndicated = writeIndicator[readBuffer];
 
             /* Ensure the minimum number of buffers will be written */
 
-            bool shouldWriteThisSector = writeIndicated ;
+            triggerHasOccurred |= writeIndicated;
+
+            numberOfTriggeredBuffersWritten = writeIndicated ? 0 : numberOfTriggeredBuffersWritten + 1;
+
+            bool shouldWriteThisSector = writeIndicated;
 
             /* Compress the buffer or write the buffer to SD card */
 
@@ -1955,7 +1983,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     setHeaderDetails(&wavHeader, effectiveSampleRate, samplesWritten - numberOfSamplesInHeader - totalNumberOfCompressedSamples);
 
-    setHeaderComment(&wavHeader, configSettings, timeOfNextRecording + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, gainOfNextRecording, extendedBatteryState, temperature, externalMicrophone, recordingState);
+    setHeaderComment(&wavHeader, configSettings, timeOfNextRecording + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, gainOfNextRecording, externalMicrophone, recordingState);
 
     /* Write the header */
 
@@ -1977,7 +2005,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     if (timeOffset > 0) {
 
-        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, configSettings->enableDailyFolders);
+        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, gainOfNextRecording, configSettings->enableDailyFolders);
 
         if (enableLED) AudioMoth_setRedLED(true);
 
