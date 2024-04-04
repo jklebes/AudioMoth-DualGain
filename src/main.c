@@ -186,10 +186,6 @@
 
 typedef enum {RECORDING_OKAY, FILE_SIZE_LIMITED, SUPPLY_VOLTAGE_LOW, SWITCH_CHANGED, MICROPHONE_CHANGED, SDCARD_WRITE_ERROR} AM_recordingState_t;
 
-/* Gain 1 or 2 step in recording cycle - just an alias of a 0,1 flag*/
-
-typedef enum {GAIN_STEP_1, GAIN_STEP_2} AM_DualGainStep_t;
-
 /* Battery level display type */
 
 typedef enum {BATTERY_LEVEL, NIMH_LIPO_BATTERY_VOLTAGE} AM_batteryLevelDisplayType_t;
@@ -270,6 +266,7 @@ typedef struct {
     uint8_t sampleRateDivider;
     uint16_t recordDurationGain1;
     uint16_t sleepDuration;
+    uint16_t sleepDurationBetweenGains;
     uint16_t recordDurationGain2;
     uint8_t enableLED;
     uint8_t activeRecordingPeriods;
@@ -302,6 +299,7 @@ static const configSettings_t defaultConfigSettings = {
     .sampleRateDivider = 8,
     .recordDurationGain1 = 5,
     .sleepDuration = 50,
+    .sleepDurationBetweenGains = 2,
     .recordDurationGain2 = 5,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
@@ -339,35 +337,6 @@ typedef struct {
 
 #pragma pack(pop)
 
-/* Functions to format header and configuration components */
-
-static uint32_t formatDecibels(char *dest, uint32_t value) {
-
-    if (value) return sprintf(dest, "-%lu dB", value);
-
-    memcpy(dest, "0 dB", 4);
-
-    return 4;
-
-}
-
-static uint32_t formatPercentage(char *dest, uint32_t mantissa, int32_t exponent) {
-
-    uint32_t length = exponent < 0 ? 1 - exponent : 0;
-
-    memcpy(dest, "0.0000", length);
-
-    length += sprintf(dest + length, "%lu", mantissa);
-
-    while (exponent-- > 0) dest[length++] = '0';
-
-    dest[length++] = '%';
-
-    return length;
-
-}
-
-// TODO add dualgain mode, details to header somewhere
 /* Functions to set WAV header details and comment */
 
 static void setHeaderDetails(wavHeader_t *wavHeader, uint32_t sampleRate, uint32_t numberOfSamples) {
@@ -379,8 +348,7 @@ static void setHeaderDetails(wavHeader_t *wavHeader, uint32_t sampleRate, uint32
 
 }
 
-// TODO
-static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSettings, uint32_t currentTime, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, bool externalMicrophone, AM_recordingState_t recordingState) {
+static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSettings, uint32_t currentTime, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, AM_gainSetting_t gain, bool externalMicrophone, AM_recordingState_t recordingState) {
 
     struct tm time;
 
@@ -442,7 +410,7 @@ static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSet
 
     static char *gainSettings[5] = {"low", "low-medium", "medium", "medium-high", "high"};
 
-    comment += sprintf(comment, "at %s gain while battery was ", gainSettings[configSettings->gain1]); //TODO
+    comment += sprintf(comment, "at %s gain while battery was ", gainSettings[gain]);
 
     if (extendedBatteryState == AM_EXT_BAT_LOW) {
 
@@ -493,7 +461,6 @@ static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSet
 }
 
 /* Function to write configuration to file */
-// TODO match modified config struct
 static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *firmwareDescription, uint8_t *firmwareVersion, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID) {
 
     struct tm time;
@@ -562,6 +529,16 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     }
 
+    length += sprintf(configBuffer + length, "Sleep betweenGains (s)            : ");
+    
+    if (configSettings->disableSleepRecordCycle) {
+
+        length += sprintf(configBuffer + length, "-");
+
+    } else {
+
+        length += sprintf(configBuffer + length, "%u", configSettings->sleepDurationBetweenGains);
+    }
 
     length += sprintf(configBuffer + length, "\r\nRecording duration gain 1 (s)          : ");
 
@@ -713,7 +690,6 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 }
 
 /* Backup domain variables */
-// TODO put in AM_DualGainStep_t
 
 static uint32_t *previousSwitchPosition = (uint32_t*)AM_BACKUP_DOMAIN_START_ADDRESS;
 
@@ -794,9 +770,9 @@ static int16_t primaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
-// TODO name this version
+
 static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 1};
-// TODO name this verion
+
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "DualGain-Firmware";
 
 /* Function prototypes */
@@ -863,7 +839,7 @@ int main() {
 
     if (AudioMoth_isInitialPowerUp()) {
 
-        /* Initialise recording schedule variables */  //TODO add AM_DualGainStep_t - as ptr?
+        /* Initialise recording schedule variables */ 
 
         *timeOfNextRecordingGain1 = 0;
 
@@ -1187,10 +1163,14 @@ int main() {
             if (!fileSystemEnabled) fileSystemEnabled = AudioMoth_enableFileSystem(configSettings->sampleRateDivider == 1 ? AM_SD_CARD_HIGH_SPEED : AM_SD_CARD_NORMAL_SPEED);
 
             if (fileSystemEnabled)  {
-                //*gainOfNextRecording\ = configSettings->gain1;
-                recordingState = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, configSettings->gain1, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
-                //*gainOfNextRecording = configSettings->gain2;
-                recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                AM_recordingState_t recordingState1 = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, configSettings->gain1, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                AudioMoth_enableTemperature();
+                temperature = AudioMoth_getTemperature();
+                AudioMoth_disableTemperature();
+                AM_recordingState_t recordingState2 = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                
+                // combine recordingState by choosing greatest in enum, i.e. worst error message
+                recordingState = MAX(recordingState1, recordingState2);
 
             } else {
 
@@ -1674,26 +1654,21 @@ static void encodeCompressionBuffer(uint32_t numberOfCompressedBuffers) {
 }
 
 /* Generate foldername and filename from time */ //TODO
-//TODO remove debug duration again
-static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, uint32_t duration_, bool prefixFoldername) {
+static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, AM_gainRange_t gain, bool prefixFoldername) {
 
     struct tm time;
 
-    struct tm duration;
-
     time_t rawTime = timestamp + configSettings->timezoneHours * SECONDS_IN_HOUR + configSettings->timezoneMinutes * SECONDS_IN_MINUTE;
 
-    time_t rawDuration = duration_ + configSettings->timezoneHours * SECONDS_IN_HOUR + configSettings->timezoneMinutes * SECONDS_IN_MINUTE;
-
     gmtime_r(&rawTime, &time);
-
-    gmtime_r(&rawDuration, &duration);
 
     sprintf(foldername, "%04d%02d%02d", YEAR_OFFSET + time.tm_year, MONTH_OFFSET + time.tm_mon, time.tm_mday);
 
     uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
+    
+    static char *gainSettings[5] = {"Low", "Lowmedium", "Medium", "Mediumhigh", "High"};
 
-    length += sprintf(filename + length, "%s_%02d%02d%02d_%02d%02d%02d", foldername, time.tm_hour, time.tm_min, time.tm_sec,duration.tm_hour, duration.tm_min, duration.tm_sec);
+    length += sprintf(filename + length, "%s_%02d%02d%02d_gain%s", foldername, time.tm_hour, time.tm_min, time.tm_sec, gainSettings[gain]);
 
     char *extension = ".WAV";
 
@@ -1766,8 +1741,8 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     static char filename[MAXIMUM_FILE_NAME_LENGTH];
 
     static char foldername[MAXIMUM_FILE_NAME_LENGTH];
-// TODO
-    generateFolderAndFilename(foldername, filename, timeOfNextRecording, recordDuration, configSettings->enableDailyFolders);
+    
+    generateFolderAndFilename(foldername, filename, timeOfNextRecording, gainOfNextRecording, configSettings->enableDailyFolders);
 
     if (configSettings->enableDailyFolders) {
 
@@ -1977,7 +1952,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     setHeaderDetails(&wavHeader, effectiveSampleRate, samplesWritten - numberOfSamplesInHeader - totalNumberOfCompressedSamples);
 
-    setHeaderComment(&wavHeader, configSettings, timeOfNextRecording + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, externalMicrophone, recordingState);
+    setHeaderComment(&wavHeader, configSettings, timeOfNextRecording + timeOffset, (uint8_t*)AM_UNIQUE_ID_START_ADDRESS, deploymentID, defaultDeploymentID, extendedBatteryState, temperature, gainOfNextRecording, externalMicrophone, recordingState);
 
     /* Write the header */
 
@@ -1999,7 +1974,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     if (timeOffset > 0) {
         //TODO
-        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, recordDuration, configSettings->enableDailyFolders);
+        generateFolderAndFilename(foldername, newFilename, timeOfNextRecording + timeOffset, gainRange, configSettings->enableDailyFolders);
 
         if (enableLED) AudioMoth_setRedLED(true);
 
@@ -2174,11 +2149,11 @@ done:  //start and duration of current/next period have been identified at start
 
             *durationOfNextRecordingGain1 = MIN(duration, configSettings->recordDurationGain1);
 
-            if (duration >= startTime + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
+            if (duration >= startTime + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
 
-                *timeOfNextRecordingGain2 = startTime + configSettings->recordDurationGain1; //start after recording 1
+                *timeOfNextRecordingGain2 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1; //start after recording 1
 
-                *durationOfNextRecordingGain2 = MIN(duration - configSettings->recordDurationGain1, configSettings->recordDurationGain2); //run for full time or rest of period
+                *durationOfNextRecordingGain2 = MIN(duration - configSettings->recordDurationGain1 - configSettings-> sleepDurationBetweenGains, configSettings->recordDurationGain2); //run for full time or rest of period
             } else {
 
                 *timeOfNextRecordingGain2 = UINT32_MAX; //never
@@ -2195,13 +2170,13 @@ done:  //start and duration of current/next period have been identified at start
 
             //figure out what recording/sleep phase were in by looking at current time
 
-            uint32_t durationOfCycle = configSettings->recordDurationGain1 + configSettings->recordDurationGain2 + configSettings->sleepDuration;
+            uint32_t durationOfCycle = configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 + configSettings->sleepDuration;
 
             uint32_t partialCycle = secondsFromStartOfPeriod % durationOfCycle;  //where we are in the recordGain1 - recordGain2 - sleep cycle
 
             *timeOfNextRecordingGain1 = currentTime - partialCycle;
 
-            *timeOfNextRecordingGain2 = currentTime - partialCycle + configSettings->recordDurationGain1;
+            *timeOfNextRecordingGain2 = currentTime - partialCycle + configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains;
 
             if (partialCycle >= configSettings->recordDurationGain1) { //we're past first gain recording
 
@@ -2209,7 +2184,7 @@ done:  //start and duration of current/next period have been identified at start
 
                 *timeOfNextRecordingGain1 += durationOfCycle;
 
-                if (partialCycle >= configSettings->recordDurationGain1 + configSettings->recordDurationGain2) { //we're also past second gain recording
+                if (partialCycle >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2) { //we're also past second gain recording
 
                     *timeOfNextRecordingGain2 += durationOfCycle;
 
@@ -2221,9 +2196,9 @@ done:  //start and duration of current/next period have been identified at start
 
            *durationOfNextRecordingGain1 = MIN(remainingDuration, configSettings->recordDurationGain1);
 
-            if (remainingDuration >= configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
+            if (remainingDuration >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains){ //at least some of Gain2 recording fits in period
 
-                *durationOfNextRecordingGain2 = MIN(remainingDuration - configSettings->recordDurationGain1, configSettings->recordDurationGain2);
+                *durationOfNextRecordingGain2 = MIN(remainingDuration - configSettings->recordDurationGain1 - configSettings->sleepDurationBetweenGains, configSettings->recordDurationGain2);
             }
             else{
 
@@ -2235,7 +2210,7 @@ done:  //start and duration of current/next period have been identified at start
 
     }
 
-    /* Check if recording should be limited by last recording time */ // TODO
+    /* Check if recording should be limited by last recording time */ 
 
     uint32_t latestRecordingTime = configSettings->latestRecordingTime > 0 ? configSettings->latestRecordingTime : MIDPOINT_OF_CENTURY;
 

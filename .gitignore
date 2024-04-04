@@ -4,6 +4,7 @@ GNU ARM v4.9.3 - Release/*
 build/objects/
 build/audiomoth.*
 !build/audiomoth.bin
+!build/audiomoth.ld
 
 *.cbp
 *.layout
