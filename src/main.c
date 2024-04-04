@@ -302,15 +302,15 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDurationBetweenGains = 0,
+    .sleepDurationBetweenGains = 2,
     .recordDurationGain1 = 5,
-    .sleepDurationMain = 50,
+    .sleepDurationMain = 48,
     .recordDurationGain2 = 5,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
-        {.startMinutes = 1020, .endMinutes = 1140},
-        {.startMinutes = 1430, .endMinutes = 80},
+        {.startMinutes = 0, .endMinutes = 0},
+        {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0}
@@ -341,34 +341,6 @@ typedef struct {
 } persistentConfigSettings_t;
 
 #pragma pack(pop)
-
-/* Functions to format header and configuration components */
-
-static uint32_t formatDecibels(char *dest, uint32_t value) {
-
-    if (value) return sprintf(dest, "-%lu dB", value);
-
-    memcpy(dest, "0 dB", 4);
-
-    return 4;
-
-}
-
-static uint32_t formatPercentage(char *dest, uint32_t mantissa, int32_t exponent) {
-
-    uint32_t length = exponent < 0 ? 1 - exponent : 0;
-
-    memcpy(dest, "0.0000", length);
-
-    length += sprintf(dest + length, "%lu", mantissa);
-
-    while (exponent-- > 0) dest[length++] = '0';
-
-    dest[length++] = '%';
-
-    return length;
-
-}
 
 // TODO add dualgain mode, details to header somewhere
 /* Functions to set WAV header details and comment */
@@ -809,9 +781,9 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
 // TODO name this version
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 1};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 0};
 // TODO name this verion
-static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "DualGain-Firmware";
+static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-DualGain";
 
 /* Function prototypes */
 
