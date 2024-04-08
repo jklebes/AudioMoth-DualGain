@@ -274,9 +274,9 @@ typedef struct {
     uint8_t oversampleRate;
     uint32_t sampleRate;
     uint8_t sampleRateDivider;
-    uint16_t recordDurationGain1;
     uint16_t sleepDuration;
     uint16_t sleepDurationBetweenGains;
+    uint16_t recordDurationGain1;
     uint16_t recordDurationGain2;
     uint8_t enableLED;
     uint8_t activeRecordingPeriods;
@@ -307,10 +307,10 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .recordDurationGain1 = 5,
-    .sleepDuration = 48,
-    .sleepDurationBetweenGains = 2,
-    .recordDurationGain2 = 5,
+    .sleepDuration = 838,
+    .sleepDurationBetweenGains = 2, // sleepDuraction = minutes * 60 - recordDurGain1 - recordDurGain2 - sleepDurationBetweenGains
+    .recordDurationGain1 = 30,
+    .recordDurationGain2 = 30,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
