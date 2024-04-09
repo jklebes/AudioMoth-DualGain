@@ -1738,7 +1738,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     numberOfRawSamplesInDMATransfer *= configSettings->sampleRateDivider;
 
    /* Initialise termination conditions */
-
+    // TODO missing minimumNumberOfTriggeredBuffersToWrite ?
     microphoneChanged = false;
 
     bool supplyVoltageLow = false;
@@ -2031,7 +2031,7 @@ static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1
     uint32_t partialCycle = *duration % durationOfCycle;
 
     if (partialCycle == 0) {
-
+        // TODO dubious
         *duration = *duration > sleepDuration ? *duration - sleepDuration : 0;
 
     } else {
@@ -2177,8 +2177,8 @@ done:  //start and duration of current/next period have been identified at start
             *timeOfNextRecordingGain1 = startTime;
 
             *durationOfNextRecordingGain1 = MIN(duration, configSettings->recordDurationGain1);
-
-            if (duration >= startTime + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
+            // TODO midnight bug here!?  Why is startTime here
+            if (duration >= configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
 
                 *timeOfNextRecordingGain2 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1; //start after recording 1
 
