@@ -1087,7 +1087,7 @@ int main() {
 
                 *timeOfNextRecordingGain2 = UINT32_MAX;
 
-                *durationOfNextRecordingGain2 = UINT32_MAX;
+                *durationOfNextRecordingGain2 = 0;
             }
 
         } // end if *readyToMakeRecordings
@@ -1138,9 +1138,13 @@ int main() {
 
         /* Make the recording */
 
-        uint32_t fileOpenTime;
+        uint32_t fileOpenTimeGain1;
 
-        uint32_t fileOpenMilliseconds;
+        uint32_t fileOpenMillisecondsGain1;
+
+        uint32_t fileOpenTimeGain2;
+
+        uint32_t fileOpenMillisecondsGain2;
 
         AM_recordingState_t recordingState = RECORDING_OKAY;
 
@@ -1177,14 +1181,24 @@ int main() {
             if (!fileSystemEnabled) fileSystemEnabled = AudioMoth_enableFileSystem(configSettings->sampleRateDivider == 1 ? AM_SD_CARD_HIGH_SPEED : AM_SD_CARD_NORMAL_SPEED);
 
             if (fileSystemEnabled)  {
-                AM_recordingState_t recordingState1 = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, configSettings->gain1, enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
-                AudioMoth_enableTemperature();
-                temperature = AudioMoth_getTemperature();
-                AudioMoth_disableTemperature();
-                AM_recordingState_t recordingState2 = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTime, &fileOpenMilliseconds);
+                recordingState = makeRecording(*timeOfNextRecordingGain1, *durationOfNextRecordingGain1, configSettings->gain1, enableLED, extendedBatteryState, temperature, &fileOpenTimeGain1, &fileOpenMillisecondsGain1);
 
-                // combine recordingState by choosing greatest in enum, i.e. worst error message
-                recordingState = MAX(recordingState1, recordingState2);
+                /* Dual Gain : make a second recording programmatically after the first, with no PowerDown between*/
+
+                //check there is an immediately following gain2 recording scheduled , i.e. this is not a period ending on a (partial) recording 1 only
+                if ( recordingState == RECORDING_OKAY &&
+                *timeOfNextRecordingGain2 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains+1) {
+                    //make gain2 recording
+                    AudioMoth_enableTemperature();
+                    temperature = AudioMoth_getTemperature();
+                    AudioMoth_disableTemperature();
+
+                    // the function starts immediately; any extra time, the rest of sleepDurationBetweenGains,
+                    // until scheduled recording2 start will be spent inside it,
+                    // in AudioMoth_delay (sleep EM1)
+                    recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTimeGain2, &fileOpenMillisecondsGain2);
+
+                }
 
             } else {
 
@@ -1226,7 +1240,8 @@ int main() {
 
         if (recordingState != SDCARD_WRITE_ERROR) {
 
-            int64_t measuredPreparationPeriod = (int64_t)fileOpenTime * MILLISECONDS_IN_SECOND + (int64_t)fileOpenMilliseconds - (int64_t)currentTime * MILLISECONDS_IN_SECOND - (int64_t)currentMilliseconds;
+            // measured from power up to start of Gain1 recording
+            int64_t measuredPreparationPeriod = (int64_t)fileOpenTimeGain1 * MILLISECONDS_IN_SECOND + (int64_t)fileOpenMillisecondsGain1 - (int64_t)currentTime * MILLISECONDS_IN_SECOND - (int64_t)currentMilliseconds;
 
             *recordingPreparationPeriod = MIN(MAXIMUM_PREPARATION_PERIOD, MAX(MINIMUM_PREPARATION_PERIOD, measuredPreparationPeriod + PREPARATION_PERIOD_INCREMENT));
 
@@ -2031,7 +2046,7 @@ static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1
     uint32_t partialCycle = *duration % durationOfCycle;
 
     if (partialCycle == 0) {
-        // TODO dubious
+
         *duration = *duration > sleepDuration ? *duration - sleepDuration : 0;
 
     } else {
@@ -2166,7 +2181,7 @@ done:  //start and duration of current/next period have been identified at start
 
         *timeOfNextRecordingGain2 = UINT32_MAX;
 
-        *durationOfNextRecordingGain2 = UINT32_MAX;
+        *durationOfNextRecordingGain2 = 0;
 
     } else {
 
@@ -2177,15 +2192,16 @@ done:  //start and duration of current/next period have been identified at start
             *timeOfNextRecordingGain1 = startTime;
 
             *durationOfNextRecordingGain1 = MIN(duration, configSettings->recordDurationGain1);
-            // TODO midnight bug here!?  Why is startTime here
-            if (duration >= configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
 
-                *timeOfNextRecordingGain2 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1; //start after recording 1
+            // midnight bug source - fixed
+            if (duration >=  configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
+
+                *timeOfNextRecordingGain2 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1; //start after recording 1 and sleepBetween
 
                 *durationOfNextRecordingGain2 = MIN(duration - configSettings->recordDurationGain1 - configSettings-> sleepDurationBetweenGains, configSettings->recordDurationGain2); //run for full time or rest of period
             } else {
 
-                *timeOfNextRecordingGain2 = UINT32_MAX; //never
+                *timeOfNextRecordingGain2 = UINT32_MAX; //never (a far future date in 2106)
 
                 *durationOfNextRecordingGain2 = 0;
 
