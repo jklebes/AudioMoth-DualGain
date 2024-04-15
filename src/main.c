@@ -76,14 +76,14 @@
 /* Configuration file constants */
 
 #define CONFIG_BUFFER_LENGTH                    512
-#define CONFIG_TIMEZONE_LENGTH                  8
+#define CONFIG_TIMEZONE_LENGTH                  12
 
 /* WAV header constant */
 
 #define PCM_FORMAT                              1
 #define RIFF_ID_LENGTH                          4
 #define LENGTH_OF_ARTIST                        32
-#define LENGTH_OF_COMMENT                       384  // TODO
+#define LENGTH_OF_COMMENT                       384
 
 /* USB configuration constant */
 
@@ -263,8 +263,7 @@ typedef struct {
     uint16_t endMinutes;
 } recordingPeriod_t;
 
-// TODO add extra fields to struct for dualGain mode
-// TODO and remove filter, GPS, and other options
+
 typedef struct {
     uint32_t time;
     AM_gainSetting_t gain1;
@@ -307,7 +306,7 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 838,
+    .sleepDuration = 58,
     .sleepDurationBetweenGains = 2, // sleepDuraction = minutes * 60 - recordDurGain1 - recordDurGain2 - sleepDurationBetweenGains
     .recordDurationGain1 = 30,
     .recordDurationGain2 = 30,
@@ -471,6 +470,7 @@ static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSet
 }
 
 /* Function to write configuration to file */
+
 static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *firmwareDescription, uint8_t *firmwareVersion, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID) {
 
     struct tm time;
@@ -670,8 +670,6 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
         }
 
     }
-
-    RETURN_BOOL_ON_ERROR(AudioMoth_writeToFile(configBuffer, length));
 
     RETURN_BOOL_ON_ERROR(AudioMoth_writeToFile(configBuffer, length));
 
@@ -1186,7 +1184,7 @@ int main() {
                 /* Dual Gain : make a second recording programmatically after the first, with no PowerDown between*/
 
                 //check there is an immediately following gain2 recording scheduled , i.e. this is not a period ending on a (partial) recording 1 only
-                if ( recordingState == RECORDING_OKAY &&
+                if ( switchPosition== AM_SWITCH_CUSTOM &&  recordingState == RECORDING_OKAY &&
                 *timeOfNextRecordingGain2 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains+1) {
                     //make gain2 recording
                     AudioMoth_enableTemperature();
