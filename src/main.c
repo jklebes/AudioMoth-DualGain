@@ -1338,6 +1338,12 @@ int main() {
 
         AudioMoth_getTime(&currentTime, &currentMilliseconds);
 
+        /* Handle switch position change */
+
+        bool switchEvent = switchPositionChanged || AudioMoth_getSwitchPosition() != *previousSwitchPosition;
+       
+        if (switchEvent) SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
+
         /* Calculate the time to the next event */
 
         calculateTimeToNextEvent(currentTime, currentMilliseconds, &timeUntilPreparationStart);
