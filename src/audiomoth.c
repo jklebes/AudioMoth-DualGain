@@ -256,7 +256,7 @@ void AudioMoth_initialise() {
 
         AM_hardwareVersion_t hardwareVersion = senseHardwareVersion();
 
-        /* Start the appropriate low frequency oscillator */
+        /* Start the appropriate low frequency oscillator */ 
 
         if (hardwareVersion < AM_VERSION_4) {
 
@@ -270,15 +270,15 @@ void AudioMoth_initialise() {
 
             GPIO_PinModeSet(LFXO_DETECT_GPIOPORT, LFXO_DETECT, gpioModePushPull, 0);
 
-            AudioMoth_delay(100);
+            AudioMoth_delay(100);  
 
             /* Enable LFXO sense */
 
             GPIO_PinModeSet(LFXO_DETECT_GPIOPORT, LFXO_DETECT, gpioModePushPull, 1);
 
-            AudioMoth_delay(10);
+            AudioMoth_delay(10);  
 
-            /* Test for presence of crystal */
+            /* Test for presence of crystal */   
 
             bool crystal = GPIO_PinInGet(LFXO_DETECT_GPIOPORT, LFXO_DETECT);
 
@@ -361,6 +361,7 @@ void AudioMoth_initialise() {
     }
 
     /* Put GPIO pins in correct state */
+
     setupGPIO();
 
     /* Enable interrupt on USB switch position to wake from EM2 */
@@ -506,7 +507,7 @@ void ADC0_IRQHandler(void) {
     /* Get the interrupt mask */
 
     uint32_t interruptMask = ADC_IntGet(ADC0);
-
+    
     /* Clear the interrupt */
 
     ADC_IntClear(ADC0, interruptMask);
@@ -1255,13 +1256,13 @@ void stateChange(USBD_State_TypeDef oldState, USBD_State_TypeDef newState) {
         USBD_Read(WEBUSB_EP_OUT, receiveBuffer, AM_USB_BUFFERSIZE, dataReceivedWebUSBCallback);
 
     } else if (oldState == USBD_STATE_CONFIGURED) {
-
+    
         USBD_AbortTransfer(HID_EP_OUT);
 
         USBD_AbortTransfer(WEBUSB_EP_OUT);
 
     }
-
+    
 }
 
 /* Callback which provides the WEB USB and USB HID specific descriptors */
@@ -1273,7 +1274,7 @@ int setupCmd(const USB_Setup_TypeDef *setup) {
     if (setup->Type == USB_SETUP_TYPE_STANDARD) {
 
         if (setup->bRequest == GET_DESCRIPTOR) {
-
+        
             switch (setup->wValue >> 8) {
 
                 case USB_HID_REPORT_DESCRIPTOR:
@@ -1301,9 +1302,9 @@ int setupCmd(const USB_Setup_TypeDef *setup) {
                     break;
 
             }
-
+        
         }
-
+    
     }
 
     if (setup->bmRequestType == WEB_USB_REQUEST_TYPE) {
@@ -1688,7 +1689,7 @@ void handleUSBPacket() {
             }
 
         } break;
-
+        
         default:
 
             break;
@@ -1770,9 +1771,9 @@ void AudioMoth_handleUSB(void) {
     while (AudioMoth_getSwitchPosition() == AM_SWITCH_USB && !enterSerialBootloader && !shouldFlashFirmware) {
 
         /* Turn green LED on to indicate activity */
-
+	    
         if (GPIO_PinInGet(USB_DATA_GPIOPORT, USB_P)) {
-
+            
             AudioMoth_setGreenLED(true);
 
             AudioMoth_delay(1);
@@ -1784,7 +1785,7 @@ void AudioMoth_handleUSB(void) {
         if (shouldCalculateCRC) {
 
             currentCRC = 0;
-
+            
             for (uint32_t i = 0; i < AM_FIRMWARE_TOTAL_SIZE; i += 1) {
 
                 uint32_t byte = firmwareStartAddress[i];
@@ -1837,7 +1838,7 @@ void AudioMoth_handleUSB(void) {
 
     /* Disable the data input pin */
 
-    GPIO_PinModeSet(USB_DATA_GPIOPORT, USB_P, gpioModeDisabled, 0);
+    GPIO_PinModeSet(USB_DATA_GPIOPORT, USB_P, gpioModeDisabled, 0);   
 
     /* Jump directly to the serial bootloader */
 
@@ -3007,7 +3008,7 @@ static void setupGPIO(void) {
     } else {
         GPIO_PinModeSet(VREF_GPIOPORT, VREF_ENABLE, gpioModePushPull, 0);
     }
-
+	
     GPIO_PinModeSet(gpioPortA, 12, gpioModeDisabled, 0);
 	GPIO_PinModeSet(gpioPortA, 13, gpioModeDisabled, 0);
 	GPIO_PinModeSet(JCK_DETECT_GPIOPORT, JCK_DETECT, gpioModeDisabled, 0);
