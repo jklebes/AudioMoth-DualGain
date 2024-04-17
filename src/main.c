@@ -306,7 +306,7 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 58,
+    .sleepDuration = 838,
     .sleepDurationBetweenGains = 2, // sleepDuraction = minutes * 60 - recordDurGain1 - recordDurGain2 - sleepDurationBetweenGains
     .recordDurationGain1 = 30,
     .recordDurationGain2 = 30,
@@ -1686,7 +1686,6 @@ static void encodeCompressionBuffer(uint32_t numberOfCompressedBuffers) {
 
 }
 
-/* Generate foldername and filename from time */ //TODO
 static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, AM_gainRange_t gain, bool prefixFoldername) {
 
     struct tm time;
@@ -1756,8 +1755,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     numberOfRawSamplesInDMATransfer *= configSettings->sampleRateDivider;
 
-   /* Initialise termination conditions */
-    // TODO missing minimumNumberOfTriggeredBuffersToWrite ?
+    /* Initialise termination conditions */
     microphoneChanged = false;
 
     bool supplyVoltageLow = false;
