@@ -193,7 +193,6 @@
 typedef enum {RECORDING_OKAY, FILE_SIZE_LIMITED, SUPPLY_VOLTAGE_LOW, SWITCH_CHANGED, MICROPHONE_CHANGED, SDCARD_WRITE_ERROR} AM_recordingState_t;
 
 /* Filter type enumeration */
-
 typedef enum {NO_FILTER, LOW_PASS_FILTER, BAND_PASS_FILTER, HIGH_PASS_FILTER} AM_filterType_t;
 
 /* Battery level display type */
@@ -268,6 +267,7 @@ typedef struct {
     uint32_t time;
     AM_gainSetting_t gain1;
     AM_gainSetting_t gain2;
+    AM_gainSetting_t gain3;
     uint8_t clockDivider;
     uint8_t acquisitionCycles;
     uint8_t oversampleRate;
@@ -275,8 +275,10 @@ typedef struct {
     uint8_t sampleRateDivider;
     uint16_t sleepDuration;
     uint16_t sleepDurationBetweenGains;
+    uint16_t sleepDurationBetweenGains3;
     uint16_t recordDurationGain1;
     uint16_t recordDurationGain2;
+    uint16_t recordDurationGain3;
     uint8_t enableLED;
     uint8_t activeRecordingPeriods;
     recordingPeriod_t recordingPeriods[MAX_RECORDING_PERIODS];
@@ -301,6 +303,7 @@ static const configSettings_t defaultConfigSettings = {
     .time = 0,
     .gain1 = AM_GAIN_MEDIUM,
     .gain2 = AM_GAIN_LOW,
+    .gain3 = AM_GAIN_LOW,
     .clockDivider = 4,
     .acquisitionCycles = 16,
     .oversampleRate = 1,
@@ -308,8 +311,10 @@ static const configSettings_t defaultConfigSettings = {
     .sampleRateDivider = 8,
     .sleepDuration = 838,
     .sleepDurationBetweenGains = 2, // sleepDuraction = minutes * 60 - recordDurGain1 - recordDurGain2 - sleepDurationBetweenGains
+    .sleepDurationBetweenGains3 = 2,
     .recordDurationGain1 = 30,
     .recordDurationGain2 = 30,
+    .recordDurationGain3 = 30,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
@@ -357,7 +362,8 @@ static void setHeaderDetails(wavHeader_t *wavHeader, uint32_t sampleRate, uint32
 
 }
 
-static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSettings, uint32_t currentTime, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, AM_gainSetting_t gain, bool externalMicrophone, AM_recordingState_t recordingState) {
+static void setHeaderComment(wavHeader_t *wavHeader, configSettings_t *configSettings, uint32_t currentTime, uint8_t *serialNumber, uint8_t *deploymentID, uint8_t *defaultDeploymentID,
+AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, AM_gainSetting_t gain, bool externalMicrophone, AM_recordingState_t recordingState) {
 
     struct tm time;
 
@@ -527,6 +533,8 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     length += sprintf(configBuffer + length, "Gain2                           : %s\r\n\r\n", gainSettings[configSettings->gain2]);
 
+    length += sprintf(configBuffer + length, "Gain3                           : %s\r\n\r\n", gainSettings[configSettings->gain2]);
+
     length += sprintf(configBuffer + length, "Sleep duration (s)              : ");
 
     if (configSettings->disableSleepRecordCycle) {
@@ -539,7 +547,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     }
 
-    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)          : ");
+    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)          : "); //TODO more of these?
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -548,6 +556,15 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
     } else {
 
         length += sprintf(configBuffer + length, "%u", configSettings->sleepDurationBetweenGains);
+    }
+
+    if (configSettings->disableSleepRecordCycle) {
+
+        length += sprintf(configBuffer + length, "-");
+
+    } else {
+
+        length += sprintf(configBuffer + length, "%u", configSettings->sleepDurationBetweenGains3);
     }
 
     length += sprintf(configBuffer + length, "\r\nRecording duration gain 1 (s)   : ");
@@ -571,6 +588,18 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
     } else {
 
         length += sprintf(configBuffer + length, "%u", configSettings->recordDurationGain2);
+
+    }
+
+    length += sprintf(configBuffer + length, "\r\nRecording duration gain 3 (s)   : ");
+
+    if (configSettings->disableSleepRecordCycle) {
+
+        length += sprintf(configBuffer + length, "-");
+
+    } else {
+
+        length += sprintf(configBuffer + length, "%u", configSettings->recordDurationGain3);
 
     }
 
@@ -709,19 +738,23 @@ static uint32_t *timeOfNextRecordingGain2 = (uint32_t*)(AM_BACKUP_DOMAIN_START_A
 
 static uint32_t *durationOfNextRecordingGain2 = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 16);
 
-static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
+static uint32_t *timeOfNextRecordingGain3 = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 20);
 
-static uint8_t *deploymentID = (uint8_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 24);
+static uint32_t *durationOfNextRecordingGain3 = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 24);
 
-static uint32_t *readyToMakeRecordings = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 28);
+static uint32_t *writtenConfigurationToFile = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 28);
 
-static uint32_t *numberOfRecordingErrors = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 32);
+static uint8_t *deploymentID = (uint8_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 32);
 
-static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
+static uint32_t *readyToMakeRecordings = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 36);
 
-static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
+static uint32_t *numberOfRecordingErrors = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 40);
 
-static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
+static uint32_t *recordingPreparationPeriod = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 44);
+
+static uint32_t *poweredDownWithShortWaitInterval = (uint32_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 48);
+
+static configSettings_t *configSettings = (configSettings_t*)(AM_BACKUP_DOMAIN_START_ADDRESS + 52);
 
 /* Filter variables */
 
@@ -783,17 +816,20 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
 
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 0, 1};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 0};
 
-static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-DualGain";
+static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-MultiGain";
 
 /* Function prototypes */
 
 static void flashLedToIndicateBatteryLife(void);
 
-static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordingGain1, uint32_t *durationOfNextRecordingGain1,  uint32_t *timeOfNextRecordingGain2, uint32_t *durationOfNextRecordingGain2, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod);
+static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordingGain1, uint32_t *durationOfNextRecordingGain1,  uint32_t *timeOfNextRecordingGain2, uint32_t *durationOfNextRecordingGain2,
+uint32_t *timeOfNextRecordingGain3, uint32_t *durationOfNextRecordingGain3,  uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod);
 
-static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint32_t recordDurationGain1, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds);
+
+static AM_recordingState_t makeRecording(uint32_t timeOfNextRecordingGain1, uint32_t recordDurationGain1, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature,
+uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds);
 
 /* Functions of copy to and from the backup domain */
 
@@ -857,9 +893,14 @@ int main() {
 
         *timeOfNextRecordingGain2 = 0;
 
+        *timeOfNextRecordingGain3 = 0;
+
         *durationOfNextRecordingGain1 = UINT32_MAX;
 
         *durationOfNextRecordingGain2 = UINT32_MAX;
+
+        *durationOfNextRecordingGain3 = UINT32_MAX;
+
 
         /* Initialise configuration writing variable */
 
@@ -1068,7 +1109,7 @@ int main() {
 
                 //sets next times, durations
                 uint32_t timeOfNextEvent = UINT32_MAX;
-                scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2, &timeOfNextEvent, NULL);
+                scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2,  timeOfNextRecordingGain3, durationOfNextRecordingGain3, &timeOfNextEvent, NULL);
 
             }
 
@@ -1077,7 +1118,7 @@ int main() {
 
             if (switchPosition == AM_SWITCH_DEFAULT) {
 
-                // on DEFAULT mode record in Gain 1 from now
+                // on DEFAULT mode record in Gain 1 from now only
 
                 *timeOfNextRecordingGain1 = scheduleTime;
 
@@ -1086,6 +1127,10 @@ int main() {
                 *timeOfNextRecordingGain2 = UINT32_MAX;
 
                 *durationOfNextRecordingGain2 = 0;
+
+                *timeOfNextRecordingGain3 = UINT32_MAX;
+
+                *durationOfNextRecordingGain3 = 0;
             }
 
         } // end if *readyToMakeRecordings
@@ -1144,6 +1189,10 @@ int main() {
 
         uint32_t fileOpenMillisecondsGain2;
 
+        uint32_t fileOpenTimeGain3;
+
+        uint32_t fileOpenMillisecondsGain3;
+
         AM_recordingState_t recordingState = RECORDING_OKAY;
 
         /* Measure battery voltage */
@@ -1195,6 +1244,17 @@ int main() {
                     // until scheduled recording2 start will be spent inside it,
                     // in AudioMoth_delay (sleep EM1)
                     recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTimeGain2, &fileOpenMillisecondsGain2);
+
+                }
+
+                //check there is still a gain3 recording sceduled before end of period
+                if ( switchPosition== AM_SWITCH_CUSTOM &&  recordingState == RECORDING_OKAY &&
+                *timeOfNextRecordingGain3 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains + *durationOfNextRecordingGain2+configSettings->sleepDurationBetweenGains3+1 ) {
+                    //make gain3 recording
+                    AudioMoth_enableTemperature();
+                    temperature = AudioMoth_getTemperature();
+                    AudioMoth_disableTemperature();
+                    recordingState = makeRecording(*timeOfNextRecordingGain3, *durationOfNextRecordingGain3, configSettings->gain3,  enableLED, extendedBatteryState, temperature, &fileOpenTimeGain3, &fileOpenMillisecondsGain3);
 
                 }
 
@@ -1265,13 +1325,17 @@ int main() {
 
             *durationOfNextRecordingGain2 = 0;
 
+            *timeOfNextRecordingGain3 = UINT32_MAX;
+
+            *durationOfNextRecordingGain3 = 0;
+
         } else if (switchPosition == AM_SWITCH_CUSTOM) {
 
             /* Update schedule time as if the recording (both gain steps) have ended correctly */
 
             if (recordingState == RECORDING_OKAY || recordingState == SUPPLY_VOLTAGE_LOW || recordingState == SDCARD_WRITE_ERROR) {
 
-                scheduleTime = MAX(scheduleTime, *timeOfNextRecordingGain2 + *durationOfNextRecordingGain2);
+                scheduleTime = MAX(scheduleTime, *timeOfNextRecordingGain3 + *durationOfNextRecordingGain3);
 
             }
 
@@ -1279,7 +1343,7 @@ int main() {
 
             uint32_t timeOfNextEvent = UINT32_MAX;
 
-            scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2, &timeOfNextEvent, NULL);
+            scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2, timeOfNextRecordingGain3, durationOfNextRecordingGain3,  &timeOfNextEvent, NULL);
 
 
         } else {
@@ -1293,6 +1357,10 @@ int main() {
             *timeOfNextRecordingGain2 = UINT32_MAX;
 
             *durationOfNextRecordingGain2 = UINT32_MAX;
+
+            *timeOfNextRecordingGain3 = UINT32_MAX;
+
+            *durationOfNextRecordingGain3 = UINT32_MAX;
 
         }
 
@@ -1341,7 +1409,7 @@ int main() {
         /* Handle switch position change */
 
         bool switchEvent = switchPositionChanged || AudioMoth_getSwitchPosition() != *previousSwitchPosition;
-       
+
         if (switchEvent) SAVE_SWITCH_POSITION_AND_POWER_DOWN(DEFAULT_WAIT_INTERVAL);
 
         /* Calculate the time to the next event */
@@ -1698,7 +1766,7 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
     uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
 
-    static char *gainSettings[5] = {"Low", "LowMedium", "Medium", "MediumHigh", "High"};
+    static char *gainSettings[5] = {"Low", "LowMedium", "Medium", "MediumHigh", "High"}; // TODO
 
     length += sprintf(filename + length, "%s_%02d%02d%02d_gain%s", foldername, time.tm_hour, time.tm_min, time.tm_sec, gainSettings[gain]);
 
@@ -1711,7 +1779,8 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
 /* Save recording to SD card */
 
-static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds) {
+static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t recordDuration, AM_gainSetting_t gainOfNextRecording, bool enableLED, AM_extendedBatteryState_t extendedBatteryState,
+  int32_t temperature, uint32_t *fileOpenTime, uint32_t *fileOpenMilliseconds) {
 
     /* Initialise buffers */
 
@@ -2038,10 +2107,10 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
 /* Schedule recordings */
 
-static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1, uint32_t recordDuration2, uint32_t sleepDuration, uint32_t sleepDurationBetweenGains) {
+static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1, uint32_t recordDuration2, uint32_t recordDuration3, uint32_t sleepDuration, uint32_t sleepDurationBetweenGains, uint32_t sleepDurationBetweenGains3) {
     //this cuts the recording period down to not include any final sleep phase
 
-    uint32_t durationOfCycle = recordDuration1 + recordDuration2 + sleepDuration + sleepDurationBetweenGains;
+    uint32_t durationOfCycle = recordDuration1 + recordDuration2 + recordDuration3 + sleepDuration + sleepDurationBetweenGains + sleepDurationBetweenGains3;
 
     uint32_t numberOfCycles = *duration / durationOfCycle;
 
@@ -2053,7 +2122,7 @@ static void adjustRecordingDuration(uint32_t *duration, uint32_t recordDuration1
 
     } else {
 
-        *duration = MIN(*duration, numberOfCycles * durationOfCycle + recordDuration1 + sleepDurationBetweenGains + recordDuration2);
+        *duration = MIN(*duration, numberOfCycles * durationOfCycle + recordDuration1 + sleepDurationBetweenGains + recordDuration2 + sleepDurationBetweenGains3 + recordDuration3);
 
     }
 
@@ -2070,7 +2139,8 @@ static void calculateStartAndDuration(uint32_t currentTime, uint32_t currentSeco
 }
 
 /* sets timeOfNextRecording, durationOfNextRecording */
-static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordingGain1, uint32_t *durationOfNextRecordingGain1, uint32_t *timeOfNextRecordingGain2, uint32_t *durationOfNextRecordingGain2, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod) {
+static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordingGain1, uint32_t *durationOfNextRecordingGain1, uint32_t *timeOfNextRecordingGain2, uint32_t *durationOfNextRecordingGain2,
+  uint32_t *timeOfNextRecordingGain3, uint32_t *durationOfNextRecordingGain3, uint32_t *startOfRecordingPeriod, uint32_t *endOfRecordingPeriod) {
 
     /* Enforce minumum schedule date */
 
@@ -2094,6 +2164,8 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
         *timeOfNextRecordingGain2 = UINT32_MAX;
 
+        *timeOfNextRecordingGain3 = UINT32_MAX;
+
         if (startOfRecordingPeriod) *startOfRecordingPeriod = UINT32_MAX;
 
         if (endOfRecordingPeriod) *endOfRecordingPeriod = UINT32_MAX;
@@ -2101,6 +2173,8 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
         *durationOfNextRecordingGain1 = 0;
 
         *durationOfNextRecordingGain2 = 0;
+
+        *durationOfNextRecordingGain3 = 0;
 
         return;
 
@@ -2125,7 +2199,8 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
     if (configSettings->disableSleepRecordCycle == false) {
 
-        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains);
+        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->recordDurationGain3, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains,
+          configSettings->sleepDurationBetweenGains3);
 
     }
 
@@ -2142,7 +2217,8 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
         if (configSettings->disableSleepRecordCycle == false) {
 
-            adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains);
+            adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->recordDurationGain3,
+            configSettings->sleepDuration, configSettings->sleepDurationBetweenGains, configSettings->sleepDurationBetweenGains3);
 
         }
 
@@ -2158,7 +2234,8 @@ static void scheduleRecording(uint32_t currentTime, uint32_t *timeOfNextRecordin
 
     if (configSettings->disableSleepRecordCycle == false) {
 
-        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2, configSettings->sleepDuration, configSettings->sleepDurationBetweenGains);
+        adjustRecordingDuration(&duration, configSettings->recordDurationGain1, configSettings->recordDurationGain2,  configSettings->recordDurationGain3,
+        configSettings->sleepDuration, configSettings->sleepDurationBetweenGains, configSettings->sleepDurationBetweenGains3);
 
     }
 
@@ -2185,6 +2262,10 @@ done:  //start and duration of current/next period have been identified at start
 
         *durationOfNextRecordingGain2 = 0;
 
+        *timeOfNextRecordingGain3 = UINT32_MAX;
+
+        *durationOfNextRecordingGain3 = 0;
+
     } else {
 
         if (currentTime <= startTime) {
@@ -2195,7 +2276,6 @@ done:  //start and duration of current/next period have been identified at start
 
             *durationOfNextRecordingGain1 = MIN(duration, configSettings->recordDurationGain1);
 
-            // midnight bug source - fixed
             if (duration >=  configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain2 recording fits in period
 
                 *timeOfNextRecordingGain2 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1; //start after recording 1 and sleepBetween
@@ -2209,6 +2289,21 @@ done:  //start and duration of current/next period have been identified at start
 
             }
 
+           if (duration >=  configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain3 recording fits in period
+
+                *timeOfNextRecordingGain3 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains3 +configSettings->recordDurationGain2 ;
+                //start after recording 1 & 2 and sleepBetween
+
+                *durationOfNextRecordingGain3 = MIN(duration - configSettings->recordDurationGain1 - configSettings-> sleepDurationBetweenGains - configSettings->recordDurationGain2 - configSettings-> sleepDurationBetweenGains3,
+                configSettings->recordDurationGain3); //run for full time or rest of period
+            } else {
+
+                *timeOfNextRecordingGain3 = UINT32_MAX; //never (a far future date in 2106)
+
+                *durationOfNextRecordingGain3 = 0;
+
+            }
+
         } else { //we are currently somewhere in a recording period
 
             /* Recording should start immediately or at the start of the next recording cycle */
@@ -2217,13 +2312,16 @@ done:  //start and duration of current/next period have been identified at start
 
             //figure out what recording/sleep phase were in by looking at current time
 
-            uint32_t durationOfCycle = configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 + configSettings->sleepDuration;
+            uint32_t durationOfCycle = configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 +
+            configSettings->sleepDurationBetweenGains3 + configSettings->recordDurationGain3  + configSettings->sleepDuration;
 
             uint32_t partialCycle = secondsFromStartOfPeriod % durationOfCycle;  //where we are in the recordGain1 - recordGain2 - sleep cycle
 
             *timeOfNextRecordingGain1 = currentTime - partialCycle;
 
             *timeOfNextRecordingGain2 = currentTime - partialCycle + configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains;
+
+            *timeOfNextRecordingGain3 = currentTime - partialCycle + configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 + configSettings->sleepDurationBetweenGains3;
 
             if (partialCycle >= configSettings->recordDurationGain1) { //we're past first gain recording
 
@@ -2235,18 +2333,40 @@ done:  //start and duration of current/next period have been identified at start
 
                     *timeOfNextRecordingGain2 += durationOfCycle;
 
+                     if (partialCycle >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2
+                      + configSettings->sleepDurationBetweenGains3 + configSettings->recordDurationGain3) { //we're also past third gain recording
+
+                    *timeOfNextRecordingGain3 += durationOfCycle;
+
+                    }
+
                 }
 
             }
 
-            uint32_t remainingDuration = startTime + duration - *timeOfNextRecordingGain1; //of period, for next recording
+            // TODO ??
+            uint32_t remainingDuration = startTime + duration - *timeOfNextRecordingGain1; //of period, for next set of recordings
 
            *durationOfNextRecordingGain1 = MIN(remainingDuration, configSettings->recordDurationGain1);
 
             if (remainingDuration >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains){ //at least some of Gain2 recording fits in period
 
                 *durationOfNextRecordingGain2 = MIN(remainingDuration - configSettings->recordDurationGain1 - configSettings->sleepDurationBetweenGains, configSettings->recordDurationGain2);
+
+                if (remainingDuration >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 + configSettings->sleepDurationBetweenGains3){ //at least some of Gain3 recording fits in period
+
+                *durationOfNextRecordingGain3 = MIN(remainingDuration - configSettings->recordDurationGain1 - configSettings->sleepDurationBetweenGains - configSettings->recordDurationGain2 - configSettings->sleepDurationBetweenGains3 ,
+                  configSettings->recordDurationGain3);
+
+                    }
+
+                else{
+
+                    *durationOfNextRecordingGain3 =0;
+                }
+
             }
+
             else{
 
                 *durationOfNextRecordingGain2 =0;
@@ -2299,6 +2419,27 @@ done:  //start and duration of current/next period have been identified at start
         if (excessTime > 0) *durationOfNextRecordingGain2 -= excessTime;
 
         if (endOfRecordingPeriod) *endOfRecordingPeriod = *timeOfNextRecordingGain2 + *durationOfNextRecordingGain2;
+
+    }
+
+
+    if (*timeOfNextRecordingGain3 >= latestRecordingTime) {
+
+        *timeOfNextRecordingGain3 = UINT32_MAX;
+
+        if (startOfRecordingPeriod) *startOfRecordingPeriod = UINT32_MAX;
+
+        if (endOfRecordingPeriod) *endOfRecordingPeriod = UINT32_MAX;
+
+        *durationOfNextRecordingGain3 = 0;
+
+    } else {
+
+        int64_t excessTime = (int64_t)*timeOfNextRecordingGain3 + (int64_t)*durationOfNextRecordingGain3 - (int64_t)latestRecordingTime;
+
+        if (excessTime > 0) *durationOfNextRecordingGain3 -= excessTime;
+
+        if (endOfRecordingPeriod) *endOfRecordingPeriod = *timeOfNextRecordingGain3 + *durationOfNextRecordingGain3;
 
     }
 
