@@ -827,15 +827,15 @@ void AudioMoth_disableMicrophone(void) {
     /* Disable VREF power */
 
     if (hardwareVersion < AM_VERSION_4) GPIO_PinOutClear(VREF_GPIOPORT, VREF_ENABLE);
-	
+
     /* Disable OPA1 and OPA2 */
-	
+
     CMU_ClockEnable(cmuClock_DAC0, true);
 
     OPAMP_Disable(DAC0, OPA1);
 
     OPAMP_Disable(DAC0, OPA2);
-	
+
     /* Stop the clocks */
 
     CMU_ClockEnable(cmuClock_DAC0, false);
@@ -943,20 +943,28 @@ static void setupOpAmp(AM_gainRange_t gainRange, AM_gainSetting_t gainSetting) {
 
     /* Set the gain */
 
-    static OPAMP_ResSel_TypeDef opamp1NormalGainRange[] = {opaResSelR2eq4_33R1, opaResSelR2eq7R1, opaResSelR2eq15R1, opaResSelR2eq15R1, opaResSelR2eq15R1};
-    static OPAMP_ResSel_TypeDef opamp2NormalGainRange[] = {opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1};
+    //static OPAMP_ResSel_TypeDef opamp1NormalGainRange[] = {opaResSelR2eq4_33R1, opaResSelR2eq7R1, opaResSelR2eq15R1, opaResSelR2eq15R1, opaResSelR2eq15R1};
+    //static OPAMP_ResSel_TypeDef opamp2NormalGainRange[] = {opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1};
 
-    static OPAMP_ResSel_TypeDef opamp1LowGainRange[] = {opaResSelR2eq0_33R1, opaResSelR2eq0_33R1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1};
-    static OPAMP_ResSel_TypeDef opamp2LowGainRange[] = {opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1};
+    //static OPAMP_ResSel_TypeDef opamp1LowGainRange[] = {opaResSelR2eq0_33R1, opaResSelR2eq0_33R1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1};
+    //static OPAMP_ResSel_TypeDef opamp2LowGainRange[] = {opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1};
 
-    OPAMP_ResSel_TypeDef *opamp1Gain = gainRange == AM_LOW_GAIN_RANGE ? opamp1LowGainRange : opamp1NormalGainRange;
-    OPAMP_ResSel_TypeDef *opamp2Gain = gainRange == AM_LOW_GAIN_RANGE ? opamp2LowGainRange : opamp2NormalGainRange;
+    // All 10 gain options in one range LowGainRange Low to High + NormalGainRange Low to High
+    static OPAMP_ResSel_TypeDef opamp1AllGainRange[] = {opaResSelR2eq0_33R1, opaResSelR2eq0_33R1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1,
+                                                        opaResSelR2eq4_33R1, opaResSelR2eq7R1, opaResSelR2eq15R1, opaResSelR2eq15R1, opaResSelR2eq15R1};
+
+    static OPAMP_ResSel_TypeDef opamp2AllGainRange[] = {opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1,
+                                                       opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1 };
+
+    //OPAMP_ResSel_TypeDef *opamp1Gain = gainRange == AM_LOW_GAIN_RANGE ? opamp1LowGainRange : opamp1NormalGainRange;
+    //OPAMP_ResSel_TypeDef *opamp2Gain = gainRange == AM_LOW_GAIN_RANGE ? opamp2LowGainRange : opamp2NormalGainRange;
+    OPAMP_ResSel_TypeDef *opamp1Gain = opamp1AllGainRange;
+    OPAMP_ResSel_TypeDef *opamp2Gain = opamp2AllGainRange;
 
     uint32_t index = MAX(AM_GAIN_LOW, MIN(gainSetting, AM_GAIN_HIGH));
 
     opa1Init.resSel = opamp1Gain[index];
     opa2Init.resSel = opamp2Gain[index];
-
     /* Enable OPA1 and OPA2 */
 
     OPAMP_Enable(DAC0, OPA1, &opa1Init);
@@ -1818,7 +1826,7 @@ void AudioMoth_handleUSB(void) {
         /* Turn green LED on to indicate activity */
 
         if (GPIO_PinInGet(USB_DATA_GPIOPORT, USB_P)) {
-            
+
             if (usbLoopCounter == 0) AudioMoth_setGreenLED(true);
 
             AudioMoth_delay(1);

@@ -303,18 +303,18 @@ static const configSettings_t defaultConfigSettings = {
     .time = 0,
     .gain1 = AM_GAIN_MEDIUM,
     .gain2 = AM_GAIN_LOW,
-    .gain3 = AM_GAIN_LOW,
+    .gain3 = AM_GAIN_EX_LOW_4,
     .clockDivider = 4,
     .acquisitionCycles = 16,
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 838,
-    .sleepDurationBetweenGains = 2, // sleepDuraction = minutes * 60 - recordDurGain1 - recordDurGain2 - sleepDurationBetweenGains
-    .sleepDurationBetweenGains3 = 2,
+    .sleepDuration = 53, // all in seconds
+    .sleepDurationBetweenGains = 3,
+    .sleepDurationBetweenGains3 = 4,
     .recordDurationGain1 = 30,
-    .recordDurationGain2 = 30,
-    .recordDurationGain3 = 30,
+    .recordDurationGain2 = 40,
+    .recordDurationGain3 = 50,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
@@ -423,7 +423,7 @@ AM_extendedBatteryState_t extendedBatteryState, int32_t temperature, AM_gainSett
 
     }
 
-    static char *gainSettings[5] = {"low", "low-medium", "medium", "medium-high", "high"};
+    static char *gainSettings[10] = {"ex-low-1", "ex-low-2", "ex-low-3", "ex-low-4", "ex-low-5", "low", "low-medium", "medium", "medium-high", "high"};
 
     comment += sprintf(comment, "at %s gain while battery was ", gainSettings[gain]);
 
@@ -1245,16 +1245,19 @@ int main() {
                     // in AudioMoth_delay (sleep EM1)
                     recordingState = makeRecording(*timeOfNextRecordingGain2, *durationOfNextRecordingGain2, configSettings->gain2,  enableLED, extendedBatteryState, temperature, &fileOpenTimeGain2, &fileOpenMillisecondsGain2);
 
-                }
+
 
                 //check there is still a gain3 recording sceduled before end of period
-                if ( switchPosition== AM_SWITCH_CUSTOM &&  recordingState == RECORDING_OKAY &&
-                *timeOfNextRecordingGain3 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains + *durationOfNextRecordingGain2+configSettings->sleepDurationBetweenGains3+1 ) {
-                    //make gain3 recording
-                    AudioMoth_enableTemperature();
-                    temperature = AudioMoth_getTemperature();
-                    AudioMoth_disableTemperature();
-                    recordingState = makeRecording(*timeOfNextRecordingGain3, *durationOfNextRecordingGain3, configSettings->gain3,  enableLED, extendedBatteryState, temperature, &fileOpenTimeGain3, &fileOpenMillisecondsGain3);
+                    if ( switchPosition== AM_SWITCH_CUSTOM &&  recordingState == RECORDING_OKAY &&
+                        *timeOfNextRecordingGain3 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains + *durationOfNextRecordingGain2+configSettings->sleepDurationBetweenGains3+1 ) {
+                        //make gain3 recording
+                        AudioMoth_enableTemperature();
+                        temperature = AudioMoth_getTemperature();
+                        AudioMoth_disableTemperature();
+
+                        recordingState = makeRecording(*timeOfNextRecordingGain3, *durationOfNextRecordingGain3, configSettings->gain3,  enableLED, extendedBatteryState, temperature, &fileOpenTimeGain3, &fileOpenMillisecondsGain3);
+
+                    }
 
                 }
 
