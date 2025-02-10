@@ -114,6 +114,7 @@ void AudioMoth_disableMicrophone(void);
 /* USB */
 
 void AudioMoth_handleUSB(void);
+void AudioMoth_blinkDuringUSB(uint32_t milliseconds);
 
 /* Backup domain */
 

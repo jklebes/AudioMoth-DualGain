@@ -131,6 +131,10 @@
 #define AM_FIRMWARE_PAGE_SIZE                     (2 * 1024)
 #define AM_FIRMWARE_TOTAL_SIZE                    ((256 * 1024) - AM_FIRMWARE_START_ADDRESS)
 
+/* USB blink constant */
+
+#define USB_SET_TIME_BLINK                        200
+
 /* Define WebUSB constants */
 
 #define USB_BOS_DESCRIPTOR                        0x0F
@@ -181,6 +185,10 @@ static UINT bw;
 
 static DMA_CB_TypeDef cb;
 static uint16_t numberOfSamplesPerTransfer;
+
+/* USB loop counter */
+
+static volatile uint32_t usbLoopCounter;
 
 /* Delay timer variable */
 
@@ -819,7 +827,15 @@ void AudioMoth_disableMicrophone(void) {
     /* Disable VREF power */
 
     if (hardwareVersion < AM_VERSION_4) GPIO_PinOutClear(VREF_GPIOPORT, VREF_ENABLE);
+	
+    /* Disable OPA1 and OPA2 */
+	
+    CMU_ClockEnable(cmuClock_DAC0, true);
 
+    OPAMP_Disable(DAC0, OPA1);
+
+    OPAMP_Disable(DAC0, OPA2);
+	
     /* Stop the clocks */
 
     CMU_ClockEnable(cmuClock_DAC0, false);
@@ -1498,6 +1514,8 @@ void handleUSBPacket() {
 
             AudioMoth_setTime(time, 0);
 
+            AudioMoth_blinkDuringUSB(USB_SET_TIME_BLINK);
+
             } break;
 
         case AM_USB_MSG_TYPE_GET_UID:
@@ -1771,6 +1789,12 @@ int dataSentWebUSBCallback(USB_Status_TypeDef status, uint32_t xferred, uint32_t
 
 /* Function to handle USB from the application */
 
+void AudioMoth_blinkDuringUSB(uint32_t milliseconds) {
+
+    usbLoopCounter = milliseconds;
+
+}
+
 void AudioMoth_handleUSB(void) {
 
     /* Configure data input pin */
@@ -1787,17 +1811,21 @@ void AudioMoth_handleUSB(void) {
 
     /* Stay within this busy loop while the switch is in USB */
 
+    usbLoopCounter = 0;
+
     while (AudioMoth_getSwitchPosition() == AM_SWITCH_USB && !enterSerialBootloader && !shouldFlashFirmware) {
 
         /* Turn green LED on to indicate activity */
 
         if (GPIO_PinInGet(USB_DATA_GPIOPORT, USB_P)) {
-
-            AudioMoth_setGreenLED(true);
+            
+            if (usbLoopCounter == 0) AudioMoth_setGreenLED(true);
 
             AudioMoth_delay(1);
 
         }
+
+        if (usbLoopCounter > 0) usbLoopCounter -= 1;
 
         /* Calcualte CRC */
 
