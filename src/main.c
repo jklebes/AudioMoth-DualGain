@@ -303,22 +303,22 @@ static const configSettings_t defaultConfigSettings = {
     .time = 0,
     .gain1 = AM_GAIN_MEDIUM,
     .gain2 = AM_GAIN_LOW,
-    .gain3 = AM_GAIN_EX_LOW_4,
+    .gain3 = AM_GAIN_EX_LOW_3,
     .clockDivider = 4,
     .acquisitionCycles = 16,
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
     .sleepDuration = 53, // all in seconds
-    .sleepDurationBetweenGains = 3,
-    .sleepDurationBetweenGains3 = 4,
+    .sleepDurationBetweenGains = 13,
+    .sleepDurationBetweenGains3 = 14,
     .recordDurationGain1 = 30,
     .recordDurationGain2 = 40,
     .recordDurationGain3 = 50,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
-        {.startMinutes = 0, .endMinutes = 1440},
+        {.startMinutes = 0, .endMinutes = 2400},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
@@ -527,13 +527,13 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     length = sprintf(configBuffer, "\r\n\r\nSample rate (Hz)                : %lu\r\n", configSettings->sampleRate / configSettings->sampleRateDivider);
 
-    static char *gainSettings[5] = {"Low", "Low-Medium", "Medium", "Medium-High", "High"};
+    static char *gainSettings[10] = {"Ex-Low-1", "Ex-Low-2", "Ex-Low-3", "Ex-Low-4", "Ex-Low-5", "Low", "Low-Medium", "Medium", "Medium-High", "High"};
 
     length += sprintf(configBuffer + length, "Gain1                           : %s\r\n\r\n", gainSettings[configSettings->gain1]);
 
     length += sprintf(configBuffer + length, "Gain2                           : %s\r\n\r\n", gainSettings[configSettings->gain2]);
 
-    length += sprintf(configBuffer + length, "Gain3                           : %s\r\n\r\n", gainSettings[configSettings->gain2]);
+    length += sprintf(configBuffer + length, "Gain3                           : %s\r\n\r\n", gainSettings[configSettings->gain3]);
 
     length += sprintf(configBuffer + length, "Sleep duration (s)              : ");
 
@@ -547,7 +547,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     }
 
-    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)          : "); //TODO more of these?
+    length += sprintf(configBuffer + length, "\r\nSleep betweenGains (s)          : ");
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -557,6 +557,9 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
         length += sprintf(configBuffer + length, "%u", configSettings->sleepDurationBetweenGains);
     }
+
+    length += sprintf(configBuffer + length, "\r\nSleep betweenGains3 (s)          : ");
+
 
     if (configSettings->disableSleepRecordCycle) {
 
@@ -716,7 +719,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
     length += sprintf(configBuffer + length, "Enable energy saver mode        : %s\r\n", configSettings->enableEnergySaverMode ? "Yes" : "No");
 
-    length += sprintf(configBuffer + length, "Enable low gain range           : %s\r\n\r\n", configSettings->enableLowGainRange ? "Yes" : "No");
+    //length += sprintf(configBuffer + length, "Enable low gain range           : %s\r\n\r\n", configSettings->enableLowGainRange ? "Yes" : "No");
 
     RETURN_BOOL_ON_ERROR(AudioMoth_writeToFile(configBuffer, length));
 
@@ -1757,7 +1760,7 @@ static void encodeCompressionBuffer(uint32_t numberOfCompressedBuffers) {
 
 }
 
-static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, AM_gainRange_t gain, bool prefixFoldername) {
+static void generateFolderAndFilename(char *foldername, char *filename, uint32_t timestamp, AM_gainSetting_t gain, bool prefixFoldername) {
 
     struct tm time;
 
@@ -1769,7 +1772,7 @@ static void generateFolderAndFilename(char *foldername, char *filename, uint32_t
 
     uint32_t length = prefixFoldername ? sprintf(filename, "%s/", foldername) : 0;
 
-    static char *gainSettings[5] = {"Low", "LowMedium", "Medium", "MediumHigh", "High"}; // TODO
+    static char *gainSettings[10] = {"ExLow1", "ExLow2", "ExLow3", "ExLow4", "ExLow5", "Low", "LowMedium", "Medium", "MediumHigh", "High"};
 
     length += sprintf(filename + length, "%s_%02d%02d%02d_gain%s", foldername, time.tm_hour, time.tm_min, time.tm_sec, gainSettings[gain]);
 
@@ -1836,9 +1839,7 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
 
     AudioMoth_enableExternalSRAM();
 
-    AM_gainRange_t gainRange = configSettings->enableLowGainRange ? AM_LOW_GAIN_RANGE : AM_NORMAL_GAIN_RANGE;
-
-    bool externalMicrophone = AudioMoth_enableMicrophone(gainRange, gainOfNextRecording, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
+    bool externalMicrophone = AudioMoth_enableMicrophone( gainOfNextRecording, configSettings->clockDivider, configSettings->acquisitionCycles, configSettings->oversampleRate);
 
     AudioMoth_initialiseDirectMemoryAccess(primaryBuffer, secondaryBuffer, numberOfRawSamplesInDMATransfer);
 

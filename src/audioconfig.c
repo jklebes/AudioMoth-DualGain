@@ -14,7 +14,6 @@
 #define CONFIG_SAMPLE_RATE                  48000
 #define CONFIG_OVERSAMPLE_RATE              8
 #define CONFIG_GAIN                         AM_GAIN_HIGH
-#define CONFIG_GAIN_RANGE                   AM_NORMAL_GAIN_RANGE
 #define CONFIG_ACQUISITION_CYCLES           16
 #define CONFIG_CLOCK_DIVIDER                4
 
@@ -286,7 +285,7 @@ void AudioConfig_enableAudioConfiguration() {
 
     /* Initialise microphone for configuration */
 
-    AudioMoth_enableMicrophone(CONFIG_GAIN_RANGE, CONFIG_GAIN, CONFIG_CLOCK_DIVIDER, CONFIG_ACQUISITION_CYCLES, CONFIG_OVERSAMPLE_RATE);
+    AudioMoth_enableMicrophone(CONFIG_GAIN, CONFIG_CLOCK_DIVIDER, CONFIG_ACQUISITION_CYCLES, CONFIG_OVERSAMPLE_RATE);
 
     AudioMoth_initialiseMicrophoneInterrupts();
 

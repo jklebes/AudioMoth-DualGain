@@ -217,7 +217,7 @@ static void setupBackupRTC(bool useLFXO);
 static void setupBackupDomain(bool useLFXO);
 static void setupWatchdogTimer(void);
 static void handleTimeOverflow(void);
-static void setupOpAmp(AM_gainRange_t gainRain, AM_gainSetting_t gain);
+static void setupOpAmp(AM_gainSetting_t gain);
 static AM_hardwareVersion_t senseHardwareVersion(void);
 static void enablePrsTimer(uint32_t samplerate);
 static void setupADC(uint32_t clockDivider, uint32_t acquisitionCycles, uint32_t oversampleRate);
@@ -720,7 +720,7 @@ void AudioMoth_initialiseDirectMemoryAccess(int16_t *primaryBuffer, int16_t *sec
 
 }
 
-bool AudioMoth_enableMicrophone(AM_gainRange_t gainRain, AM_gainSetting_t gain, uint32_t clockDivider, uint32_t acquisitionCycles, uint32_t oversampleRate) {
+bool AudioMoth_enableMicrophone(AM_gainSetting_t gain, uint32_t clockDivider, uint32_t acquisitionCycles, uint32_t oversampleRate) {
 
     /* Check for external microphone */
 
@@ -770,7 +770,7 @@ bool AudioMoth_enableMicrophone(AM_gainRange_t gainRain, AM_gainSetting_t gain, 
 
     /* Set up amplifier stage and the ADC */
 
-    setupOpAmp(gainRain, gain);
+    setupOpAmp(gain);
 
     setupADC(clockDivider, acquisitionCycles, oversampleRate);
 
@@ -912,7 +912,7 @@ static void enablePrsTimer(uint32_t sampleRate) {
 
 }
 
-static void setupOpAmp(AM_gainRange_t gainRange, AM_gainSetting_t gainSetting) {
+static void setupOpAmp(AM_gainSetting_t gainSetting) {
 
     /* Check the hardware version */
 
@@ -943,7 +943,7 @@ static void setupOpAmp(AM_gainRange_t gainRange, AM_gainSetting_t gainSetting) {
 
     /* Set the gain */
 
-    //static OPAMP_ResSel_TypeDef opamp1NormalGainRange[] = {opaResSelR2eq4_33R1, opaResSelR2eq7R1, opaResSelR2eq15R1, opaResSelR2eq15R1, opaResSelR2eq15R1};
+    //static OPAMP_ResSel_TypeDef opamp1NormalGainRangindexe[] = {opaResSelR2eq4_33R1, opaResSelR2eq7R1, opaResSelR2eq15R1, opaResSelR2eq15R1, opaResSelR2eq15R1};
     //static OPAMP_ResSel_TypeDef opamp2NormalGainRange[] = {opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR1eq1_67R1, opaResSelR2eq2R1};
 
     //static OPAMP_ResSel_TypeDef opamp1LowGainRange[] = {opaResSelR2eq0_33R1, opaResSelR2eq0_33R1, opaResSelR2eqR1, opaResSelR2eqR1, opaResSelR2eqR1};
@@ -961,7 +961,7 @@ static void setupOpAmp(AM_gainRange_t gainRange, AM_gainSetting_t gainSetting) {
     OPAMP_ResSel_TypeDef *opamp1Gain = opamp1AllGainRange;
     OPAMP_ResSel_TypeDef *opamp2Gain = opamp2AllGainRange;
 
-    uint32_t index = MAX(AM_GAIN_LOW, MIN(gainSetting, AM_GAIN_HIGH));
+    uint32_t index = MAX(AM_GAIN_EX_LOW_1, MIN(gainSetting, AM_GAIN_HIGH));
 
     opa1Init.resSel = opamp1Gain[index];
     opa2Init.resSel = opamp2Gain[index];

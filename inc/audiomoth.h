@@ -34,7 +34,7 @@
 
 /* Gain, SD card speed, switch, frequency and battery state enumerations */
 
-typedef enum {AM_LOW_GAIN_RANGE, AM_NORMAL_GAIN_RANGE} AM_gainRange_t;
+//typedef enum {AM_LOW_GAIN_RANGE, AM_NORMAL_GAIN_RANGE} AM_gainRange_t;
 
 typedef enum {AM_SD_CARD_NORMAL_SPEED, AM_SD_CARD_HIGH_SPEED} AM_sdCardSpeed_t;
 
@@ -42,7 +42,8 @@ typedef enum {AM_HF_CLK_DIV1, AM_HF_CLK_DIV2, AM_HF_CLK_DIV4} AM_highFrequencyCl
 
 typedef enum {AM_SWITCH_CUSTOM, AM_SWITCH_DEFAULT, AM_SWITCH_USB, AM_SWITCH_NONE} AM_switchPosition_t;
 
-typedef enum {AM_GAIN_LOW, AM_GAIN_LOW_MEDIUM, AM_GAIN_MEDIUM, AM_GAIN_MEDIUM_HIGH, AM_GAIN_HIGH} AM_gainSetting_t;
+typedef enum {AM_GAIN_EX_LOW_1, AM_GAIN_EX_LOW_2, AM_GAIN_EX_LOW_3, AM_GAIN_EX_LOW_4, AM_GAIN_EX_LOW_5,
+        AM_GAIN_LOW, AM_GAIN_LOW_MEDIUM, AM_GAIN_MEDIUM, AM_GAIN_MEDIUM_HIGH, AM_GAIN_HIGH} AM_gainSetting_t;
 
 typedef enum {AM_HFRCO_1MHZ, AM_HFRCO_7MHZ, AM_HFRCO_11MHZ, AM_HFRCO_14MHZ, AM_HFRCO_21MHZ, AM_HFRCO_28MHZ} AM_clockFrequency_t;
 
@@ -108,7 +109,7 @@ void AudioMoth_startMicrophoneSamples(uint32_t sampleRate);
 void AudioMoth_initialiseMicrophoneInterrupts(void);
 void AudioMoth_initialiseDirectMemoryAccess(int16_t *primaryBuffer, int16_t *secondaryBuffer, uint16_t numberOfSamples);
 
-bool AudioMoth_enableMicrophone(AM_gainRange_t gainRange, AM_gainSetting_t gainSetting, uint32_t clockDivider, uint32_t acquisitionCycles, uint32_t oversampleRate);
+bool AudioMoth_enableMicrophone(AM_gainSetting_t gainSetting, uint32_t clockDivider, uint32_t acquisitionCycles, uint32_t oversampleRate);
 void AudioMoth_disableMicrophone(void);
 
 /* USB */
