@@ -2293,7 +2293,7 @@ done:  //start and duration of current/next period have been identified at start
 
             }
 
-           if (duration >=  configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1){ //at least some of Gain3 recording fits in period
+           if (duration >=  configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains3 + configSettings->recordDurationGain2){ //at least some of Gain3 recording fits in period
 
                 *timeOfNextRecordingGain3 = startTime + configSettings->sleepDurationBetweenGains +configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains3 +configSettings->recordDurationGain2 ;
                 //start after recording 1 & 2 and sleepBetween
