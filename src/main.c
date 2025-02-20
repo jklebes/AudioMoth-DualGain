@@ -309,9 +309,9 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 800, // all in seconds
-    .sleepDurationBetweenGains = 5,
-    .sleepDurationBetweenGains3 = 5,
+    .sleepDuration = 790, // all in seconds
+    .sleepDurationBetweenGains = 10,
+    .sleepDurationBetweenGains3 = 10,
     .recordDurationGain1 = 30,
     .recordDurationGain2 = 30,
     .recordDurationGain3 = 30,
@@ -1112,7 +1112,8 @@ int main() {
 
                 //sets next times, durations
                 uint32_t timeOfNextEvent = UINT32_MAX;
-                scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2,  timeOfNextRecordingGain3, durationOfNextRecordingGain3, &timeOfNextEvent, NULL);
+                scheduleRecording(scheduleTime, timeOfNextRecordingGain1, durationOfNextRecordingGain1, timeOfNextRecordingGain2, durationOfNextRecordingGain2,
+                                                timeOfNextRecordingGain3, durationOfNextRecordingGain3, &timeOfNextEvent, NULL);
 
             }
 
@@ -1237,7 +1238,7 @@ int main() {
 
                 //check there is an immediately following gain2 recording scheduled , i.e. this is not a period ending on a (partial) recording 1 only
                 if ( switchPosition== AM_SWITCH_CUSTOM &&  recordingState == RECORDING_OKAY &&
-                *timeOfNextRecordingGain2 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains+1) {
+                    *timeOfNextRecordingGain2 <= *timeOfNextRecordingGain1+*durationOfNextRecordingGain1+configSettings->sleepDurationBetweenGains+1) {
                     //make gain2 recording
                     AudioMoth_enableTemperature();
                     temperature = AudioMoth_getTemperature();
@@ -2300,6 +2301,7 @@ done:  //start and duration of current/next period have been identified at start
 
                 *durationOfNextRecordingGain3 = MIN(duration - configSettings->recordDurationGain1 - configSettings-> sleepDurationBetweenGains - configSettings->recordDurationGain2 - configSettings-> sleepDurationBetweenGains3,
                 configSettings->recordDurationGain3); //run for full time or rest of period
+
             } else {
 
                 *timeOfNextRecordingGain3 = UINT32_MAX; //never (a far future date in 2106)
@@ -2340,7 +2342,7 @@ done:  //start and duration of current/next period have been identified at start
                      if (partialCycle >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2
                       + configSettings->sleepDurationBetweenGains3 + configSettings->recordDurationGain3) { //we're also past third gain recording
 
-                    *timeOfNextRecordingGain3 += durationOfCycle;
+                        *timeOfNextRecordingGain3 += durationOfCycle;
 
                     }
 
@@ -2348,7 +2350,6 @@ done:  //start and duration of current/next period have been identified at start
 
             }
 
-            // TODO ??
             uint32_t remainingDuration = startTime + duration - *timeOfNextRecordingGain1; //of period, for next set of recordings
 
            *durationOfNextRecordingGain1 = MIN(remainingDuration, configSettings->recordDurationGain1);
@@ -2357,24 +2358,26 @@ done:  //start and duration of current/next period have been identified at start
 
                 *durationOfNextRecordingGain2 = MIN(remainingDuration - configSettings->recordDurationGain1 - configSettings->sleepDurationBetweenGains, configSettings->recordDurationGain2);
 
-                if (remainingDuration >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 + configSettings->sleepDurationBetweenGains3){ //at least some of Gain3 recording fits in period
-
-                *durationOfNextRecordingGain3 = MIN(remainingDuration - configSettings->recordDurationGain1 - configSettings->sleepDurationBetweenGains - configSettings->recordDurationGain2 - configSettings->sleepDurationBetweenGains3 ,
-                  configSettings->recordDurationGain3);
-
-                    }
-
-                else{
-
-                    *durationOfNextRecordingGain3 =0;
-                }
 
             }
 
             else{
 
-                *durationOfNextRecordingGain2 =0;
+                *durationOfNextRecordingGain2 = 0;
             }
+
+                if (remainingDuration >= configSettings->recordDurationGain1 + configSettings->sleepDurationBetweenGains + configSettings->recordDurationGain2 + configSettings->sleepDurationBetweenGains3){ //at least some of Gain3 recording fits in period
+
+                    *durationOfNextRecordingGain3 = MIN(remainingDuration - configSettings->recordDurationGain1 - configSettings->sleepDurationBetweenGains - configSettings->recordDurationGain2 - configSettings->sleepDurationBetweenGains3 ,
+                  configSettings->recordDurationGain3);
+
+                }
+
+                else{
+
+                    *durationOfNextRecordingGain3 = 0;
+                }
+
 
 
         }
