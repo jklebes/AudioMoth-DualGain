@@ -301,24 +301,24 @@ typedef struct {
 
 static const configSettings_t defaultConfigSettings = {
     .time = 0,
-    .gain1 = AM_GAIN_MEDIUM,
-    .gain2 = AM_GAIN_LOW,
-    .gain3 = AM_GAIN_EX_LOW_3,
+    .gain1 = AM_GAIN_EX_LOW_2,
+    .gain2 = AM_GAIN_EX_LOW_4,
+    .gain3 = AM_GAIN_MEDIUM,
     .clockDivider = 4,
     .acquisitionCycles = 16,
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 790, // all in seconds
-    .sleepDurationBetweenGains = 10,
-    .sleepDurationBetweenGains3 = 10,
+    .sleepDuration = 800, // all in seconds
+    .sleepDurationBetweenGains = 5,
+    .sleepDurationBetweenGains3 = 5,
     .recordDurationGain1 = 30,
     .recordDurationGain2 = 30,
     .recordDurationGain3 = 30,
     .enableLED = 1,
     .activeRecordingPeriods = 1,
     .recordingPeriods = {
-        {.startMinutes = 0, .endMinutes = 2400},
+        {.startMinutes = 0, .endMinutes = 1440},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
         {.startMinutes = 0, .endMinutes = 0},
@@ -642,7 +642,7 @@ static bool writeConfigurationToFile(configSettings_t *configSettings, uint8_t *
 
         if (i == 0) length += sprintf(configBuffer + length, "\r\n");
 
-        length += sprintf(configBuffer + length, "Recording period %lu              : %02lu:%02lu - %02lu:%02lu (%s)\r\n", i + 1, startMinutes / 60, startMinutes % 60, endMinutes / 60, endMinutes % 60, timezoneBuffer);
+        length += sprintf(configBuffer + length, "Recording period %lu  : %02lu:%02lu - %02lu:%02lu (%s)\r\n", i + 1,  startMinutes / 60, startMinutes % 60, endMinutes / 60, endMinutes % 60, timezoneBuffer);
 
     }
 
@@ -819,7 +819,7 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
 
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 0};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 4};
 
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-MultiGain";
 
