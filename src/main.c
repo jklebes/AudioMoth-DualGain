@@ -301,7 +301,7 @@ typedef struct {
 
 static const configSettings_t defaultConfigSettings = {
     .time = 0,
-    .gain1 = AM_GAIN_EX_LOW_2,
+    .gain1 = AM_GAIN_HIGH,
     .gain2 = AM_GAIN_EX_LOW_4,
     .gain3 = AM_GAIN_MEDIUM,
     .clockDivider = 4,
@@ -309,7 +309,7 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 800, // all in seconds
+    .sleepDuration = 200, // all in seconds
     .sleepDurationBetweenGains = 5,
     .sleepDurationBetweenGains3 = 5,
     .recordDurationGain1 = 30,
@@ -819,7 +819,7 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
 
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 4};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 5};
 
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-MultiGain";
 
@@ -1818,6 +1818,8 @@ static AM_recordingState_t makeRecording(uint32_t timeOfNextRecording, uint32_t 
     float sampleMultiplier = 16.0f / (float)(configSettings->oversampleRate * configSettings->sampleRateDivider);
 
     if (AudioMoth_hasInvertedOutput()) sampleMultiplier = -sampleMultiplier;
+
+    DigitalFilter_setAdditionalGain(sampleMultiplier);
 
     /* Calculate the number of samples in each DMA transfer (while ensuring that number of samples written to the SRAM buffer on each DMA transfer is a power of two so each SRAM buffer is filled after an integer number of DMA transfers) */
 
