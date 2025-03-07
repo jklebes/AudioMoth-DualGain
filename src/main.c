@@ -293,7 +293,6 @@ typedef struct {
     AM_batteryLevelDisplayType_t batteryLevelDisplayType : 1;
     uint8_t enableEnergySaverMode : 1;
     uint8_t disable48HzDCBlockingFilter : 1;
-    uint8_t enableLowGainRange : 1;
     uint8_t enableDailyFolders : 1;
 } configSettings_t;
 
@@ -301,7 +300,7 @@ typedef struct {
 
 static const configSettings_t defaultConfigSettings = {
     .time = 0,
-    .gain1 = AM_GAIN_HIGH,
+    .gain1 = AM_GAIN_EX_LOW_2,
     .gain2 = AM_GAIN_EX_LOW_4,
     .gain3 = AM_GAIN_MEDIUM,
     .clockDivider = 4,
@@ -309,7 +308,7 @@ static const configSettings_t defaultConfigSettings = {
     .oversampleRate = 1,
     .sampleRate = 384000,
     .sampleRateDivider = 8,
-    .sleepDuration = 200, // all in seconds
+    .sleepDuration = 800, // all in seconds
     .sleepDurationBetweenGains = 5,
     .sleepDurationBetweenGains3 = 5,
     .recordDurationGain1 = 30,
@@ -335,7 +334,6 @@ static const configSettings_t defaultConfigSettings = {
     .batteryLevelDisplayType = BATTERY_LEVEL,
     .enableEnergySaverMode = 0,
     .disable48HzDCBlockingFilter = 0,
-    .enableLowGainRange = 0,
     .enableDailyFolders = 0
 };
 
@@ -819,7 +817,7 @@ static int16_t secondaryBuffer[MAXIMUM_SAMPLES_IN_DMA_TRANSFER];
 
 /* Firmware version and description */
 
-static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 5};
+static uint8_t firmwareVersion[AM_FIRMWARE_VERSION_LENGTH] = {1, 1, 6};
 
 static uint8_t firmwareDescription[AM_FIRMWARE_DESCRIPTION_LENGTH] = "AudioMoth-MultiGain";
 
